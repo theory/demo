@@ -54,10 +54,14 @@ Username to include in the Authorization header. Defaults to "demo".
 
 sub new {
     my ($pkg, %params) = @_;
-    $params{curl} = WWW::Curl::Simple->new(
-        check_ssl_certs => 1,
-        ssl_cert_bundle => delete $params{ca_bundle},
-    );
+    if ($params{ca_bundle}) {
+        $params{curl} = WWW::Curl::Simple->new(
+            check_ssl_certs => 1,
+            ssl_cert_bundle => delete $params{ca_bundle},
+        );
+    } else {
+        $params{curl} = WWW::Curl::Simple->new;
+    }
     $params{head} = HTTP::Headers->new(
         #'Content-Type'  => 'application/json',
     );
