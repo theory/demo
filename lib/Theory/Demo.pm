@@ -1,23 +1,24 @@
 package Theory::Demo;
 
-# perl -nE '/^use ([^;\s]+)/ && say $1' lib/Demo.pm | xargs cpanm --notest
-
+use v5.28;
 use strict;
 use warnings;
-use v5.28;
-use Term::TermKey;
-use IPC::System::Simple 1.17 qw(capturex run runx capture);
-use WWW::Curl::Simple;
-use IO::Socket::SSL;
-use Net::SSLeay;
-use JSON::PP;
-use URI;
 use utf8;
 use open IN => ":encoding(utf8)", OUT => ":utf8";
+
+use Crypt::Misc qw(decode_b58b);
 use Encode qw(encode_utf8 decode_utf8);
-use Term::ANSIColor ();
-use Getopt::Long;
 use File::Temp;
+use Getopt::Long;
+use IO::Socket::SSL;
+use IPC::System::Simple 1.17 qw(capturex run runx capture);
+use JSON::PP;
+use Math::BigInt;
+use Net::SSLeay;
+use Term::ANSIColor ();
+use Term::TermKey;
+use URI;
+use WWW::Curl::Simple;
 
 $| = 1;
 
@@ -57,16 +58,15 @@ sub new {
         check_ssl_certs => 1,
         ssl_cert_bundle => delete $params{ca_bundle},
     );
-    $params{headers} = HTTP::Headers->new(
+    $params{head} = HTTP::Headers->new(
         #'Content-Type'  => 'application/json',
     );
-    $params{headers}->authorization_basic('me');
+    $params{head}->authorization_basic('me');
 
     return bless {
         tk     => Term::TermKey->new( \*STDIN ),
         prompt => 'demo',
         user   => 'demo',
-        head   => $headers,
         %params,
     } => $pkg;
 }
@@ -226,7 +226,7 @@ sub clear_now {
     shift->prompt;
 }
 
-$ENV{TMPDIR} =~ s{/+$}{};
+# $ENV{TMPDIR} =~ s{/+$}{};
 my %env = %ENV;
 
 sub _env {
@@ -331,6 +331,25 @@ sub decode_json_file {
     return decode_json join '', <$fh>;
 }
 
+
+# Decodes a base58-encoded UUID to its canonical string representation.
+sub b58_uuid {
+    shift;
+    my $bytes = decode_b58b shift;
+    use bytes;
+    return  join '-',
+        map { unpack 'H*', $_ }
+        map { substr $bytes, 0, $_, '' }
+       ( 4, 2, 2, 2, 6 );
+}
+
+# Decodes a base58-encoded big-endian uint64 to a Math::BigInt.
+sub b58_int { Math::BigInt->from_bytes(decode_b58b $_[1]) }
+
+sub key_prefix {
+    '01' . unpack("H8", pack("N1", $_[1]));
+}
+
 =head3 handle
 
 Handles an HTTP request, printing out the response body. Returns the decoded
@@ -368,7 +387,7 @@ sub handle {
 sub request {
     my ($self, $method, $url, $body) = @_;
     my $req = HTTP::Request->new($method, $url, $self->{head});
-    $req->add_content_utf8($body)
+    $req->add_content_utf8($body);
     $self->{curl}->request($req);
 }
 

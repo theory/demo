@@ -1,11 +1,13 @@
-FROM perl:5.42-slim
+FROM debian:trixie-slim
 
 COPY lib/Theory/Demo.pm .
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libterm-termkey-perl \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libcryptx-perl \
+        libio-socket-ssl-perl \
         libipc-system-simple-perl \
+        libterm-termkey-perl \
         liburi-perl \
         libwww-curl-simple-perl \
         yq \
