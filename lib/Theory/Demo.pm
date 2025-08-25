@@ -132,7 +132,6 @@ Waits for the user to hit the escape key.
 
 sub escape {
     my $self = shift;
-    $self->type_lines(@_);
     my $tk = $self->{tk};
     $tk->waitkey(my $key);
     while ($key->format(0) ne "Escape") {
@@ -386,15 +385,15 @@ sub handle {
         }
     }
 
-    my $body = $res->{content};
+    my $body = $res->decoded_content;
     my $ret;
     if ($head->content_length && $head->content_type =~ m{^application/json\b}) {
-        $ret = decode_json $res->content;
+        $ret = decode_json $body;
         return $ret if $quiet;
         _yq $body;
         $self->nl_prompt;
     } elsif (!$quiet) {
-        say $res->decoded_content if $head->content_length;
+        say $body if $head->content_length;
         $self->nl_prompt;
     }
     return $ret;
@@ -405,6 +404,13 @@ sub request {
     my $req = HTTP::Request->new($method, $url, $self->{head});
     $req->add_content_utf8($body);
     $self->{curl}->request($req);
+}
+
+sub _data($) {
+    my $data = shift;
+    return encode_utf8 $data unless $data =~ s/^@//;
+    open my $fh, '<:raw', $data or die "Cannot open $data: $!\n";
+    return join '', <$fh>;
 }
 
 sub get_quiet {
@@ -440,7 +446,7 @@ sub post {
     my ($self, $path, $data, $expect_status) = @_;
     my $url = $self->_type_url('POST', $path, $data);
     $self->handle(
-        $self->request(POST => $url),
+        $self->request(POST => $url, _data $data),
         $expect_status || 201, # NO CONTENT
     );
 }
@@ -449,7 +455,7 @@ sub put {
     my ($self, $path, $data, $expect_status) = @_;
     my $url = $self->_type_url('PUT', $path, $data);
     $self->handle(
-        $self->request(PUT => $url),
+        $self->request(PUT => $url, _data $data),
         $expect_status || 200, # OK
     );
 }
@@ -458,7 +464,7 @@ sub patch {
     my ($self, $path, $data, $expect_status) = @_;
     my $url = $self->_type_url('PATCH', $path, $data);
     $self->handle(
-        $self->request(PUT => $url),
+        $self->request(PUT => $url, _data $data),
         $expect_status || 200, # OK
     );
 }
@@ -467,7 +473,7 @@ sub query {
     my ($self, $path, $data, $expect_status) = @_;
     my $url = $self->_type_url('QUERY', $path, $data);
     $self->handle(
-        $self->request(QUERY => $url),
+        $self->request(QUERY => $url, _data $data),
         $expect_status || 200, # OK
     );
 }
