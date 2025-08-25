@@ -8,7 +8,32 @@ use utf8;
 use Test::More 'no_plan';
 BEGIN { use_ok 'Theory::Demo' or die }
 
-my $demo = Theory::Demo->new;
+# Test no params.
+ok my $demo = Theory::Demo->new, 'Should create demo with no params';
+is_deeply $demo->{curl}, WWW::Curl::Simple->new, 'Should have curl client';
+is_deeply $demo->{head}, HTTP::Headers->new, 'Should have empty headers';
+isa_ok $demo->{tk}, 'Term::TermKey';
+is $demo->{prompt}, 'demo', 'Should have default prompt';
+
+# Test all params.
+ok $demo = Theory::Demo->new(
+    prompt    => 'bagel',
+    base_url  => 'https://hi/',
+    ca_bundle => 'foo',
+    user      => 'peggy',
+), 'Should create demo with all params';
+
+is_deeply $demo->{curl}, WWW::Curl::Simple->new(
+    check_ssl_certs => 1,
+    ssl_cert_bundle => 'foo',
+), 'Should have configured curl client';
+
+my $head = HTTP::Headers->new;
+$head->authorization_basic('peggy');
+is_deeply $head, $demo->{head}, , 'Should have configured headers';
+isa_ok $demo->{tk}, 'Term::TermKey';
+is $demo->{prompt}, 'bagel', 'Should have specified prompt';
+
 for my $tc (
     {
         b58 => 'NpAkRPsPPhzrRWWKPJgi5V', 

@@ -68,12 +68,10 @@ sub new {
     if (my $u = delete $params{user}) {
         $params{head}->authorization_basic($u);
     }
+    $params{tk} = Term::TermKey->new( \*STDIN );
+    $params{base_url} =~ s/\/+\z// if $params{base_url};
 
-    return bless {
-        tk     => Term::TermKey->new( \*STDIN ),
-        prompt => 'demo',
-        %params,
-    } => $pkg;
+    return bless { prompt => 'demo', %params } => $pkg;
 }
 
 =head2 Methods
@@ -480,7 +478,10 @@ sub query {
 
 sub _type_url {
     my ($self, $method, $path, $data) = @_;
-    $self->type($method, "\$URL/$path", (defined $data ? ($data) : ()));
+    $self->type(
+        $method, "$self->{base_url}/$path",
+        (defined $data ? ($data) : ()),
+    );
     return URI->new($self->{base_url} . _env $path);
 }
 
