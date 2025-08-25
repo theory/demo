@@ -65,12 +65,13 @@ sub new {
     $params{head} = HTTP::Headers->new(
         #'Content-Type'  => 'application/json',
     );
-    $params{head}->authorization_basic('me');
+    if (my $u = delete $params{user}) {
+        $params{head}->authorization_basic($u);
+    }
 
     return bless {
         tk     => Term::TermKey->new( \*STDIN ),
         prompt => 'demo',
-        user   => 'demo',
         %params,
     } => $pkg;
 }
@@ -310,14 +311,6 @@ sub yq {
     $self->nl_prompt;
 }
 
-# Diff two files. Requires `--color`; on macOS, `brew install diffutils`.
-sub diff {
-    my $self = shift;
-    $self->type_lines('diff -u ' . join ' ', @_);
-    $self->run_quiet('diff -u --color', @_, '|| true');
-    $self->nl_prompt;
-}
-
 # Pipe command output to yq.
 sub type_run_yq {
     my $self = shift;
@@ -326,6 +319,13 @@ sub type_run_yq {
     _yq capture _env join ' ', @_;
 }
 
+# Diff two files. Requires `--color`; on macOS, `brew install diffutils`.
+sub diff {
+    my $self = shift;
+    $self->type_lines('diff -u ' . join ' ', @_);
+    $self->run_quiet('diff -u --color', @_, '|| true');
+    $self->nl_prompt;
+}
 
 # Decode the contents of a file into JSON and return the resulting Perl value.
 sub decode_json_file {
@@ -335,6 +335,18 @@ sub decode_json_file {
     return decode_json join '', <$fh>;
 }
 
+# Echos and runs `psql -tXxc "$query"` then calls C<nl_prompt>. The query may
+# be multiple lines and must not contain double quotes.
+sub type_run_psql_query {
+    my $self = shift;
+    $self->type($_) for (
+        qq{psql -tXxc "\n},
+        join("\n", @_),
+        qq{\n"}
+    );
+    run _env 'psql -tXxc "' . join(' ', @_) . '"';
+    $self->nl_prompt;
+}
 
 # Decodes a base58-encoded UUID to its canonical string representation.
 sub b58_uuid {
