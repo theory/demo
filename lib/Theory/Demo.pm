@@ -126,33 +126,32 @@ sub nl_prompt {
     $_[0]->emit("\n$_[0]->{prompt} ❯ ");
 }
 
-=head3 C<enter>
+=head3 C<wait_for_enter>
 
-Waits for the user to hit the enter key.
+Waits for the user to hit the enter key, then emit a newline.
 
 =cut
 
-sub enter {
-    my $self = shift;
-    my $tk = $self->{tk};
-    $tk->waitkey(my $key);
-    while ($key->format(0) ne "Enter") {
-        $tk->waitkey($key);
-    }
-    $self->emit("\n");
+sub wait_for_enter {
+    $_[0]->_wait_for('Enter');
 }
 
-=head3 C<escape>
+=head3 C<wait_for_escape>
 
-Waits for the user to hit the escape key.
+Waits for the user to hit the escape key, then emit a newline.
 
 =cut
 
-sub escape {
-    my $self = shift;
+sub wait_for_escape {
+    $_[0]->_wait_for('Escape');
+}
+
+# Wait for a key with a specific format.
+sub _wait_for {
+    my ($self, $fmt) = @_;
     my $tk = $self->{tk};
     $tk->waitkey(my $key);
-    while ($key->format(0) ne "Escape") {
+    while ($key->format(0) ne $fmt) {
         $tk->waitkey($key);
     }
     $self->emit("\n");
@@ -163,14 +162,15 @@ sub escape {
 Waits for the user to type any key and emits a single character of the the
 arguments passed to it for each key. Unless the user hits the enter key, in
 which case it will emit every character up to the next newline, then wait.
-Returns when it has emitted all of the characters.
+Returns when it has emitted all of the characters and hits the enter key.
 
 =cut
 
 sub type {
     my $self = shift;
     my $tk = $self->{tk};
-    my $str = encode_utf8 join ' ' => @_;
+    my $str = join ' ' => @_;
+
     for (my $i = 0; $i < length $str; $i++) {
         $tk->waitkey(my $k);
         my $c = substr $str, $i, 1;
@@ -187,22 +187,22 @@ sub type {
         if ($c eq "\e") {
             # Print until the escape close character.
             while ($c ne "m") {
-                $c = substr $str, ++$i, 1;
-                $self->emit($c);
+                $self->emit($c = substr $str, ++$i, 1);
             }
+
             # Print the first char after, if there is one.
             $self->emit(substr $str, ++$i, 1) if $i < length $str;
         }
     }
-    $self->enter;
+
+    $self->wait_for_enter;
 }
 
 =head3 C<comment>
 
-Echoes its argumentsd then displays a prompt.
+Echoes its arguments then displays a prompt.
 
 =cut
-
 
 sub echo {
     my $self = shift;

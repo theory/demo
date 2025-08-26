@@ -10,12 +10,9 @@ use Test::More 'no_plan';
 BEGIN { use_ok 'Theory::Demo' or die }
 $ENV{TERM} = "vt100";
 
-# Use a pipe to create read and write handles. Cannot use regular file
-# handles (like open on a scalar ref) because it hits an assertion failure:
-# `perl: uniutil.c:183: unibi_from_term: Assertion `term != NULL' failed.`
-# So borrow this technique from Term::TermKey.
-# https://metacpan.org/release/PEVANS/Term-TermKey-0.19/source/t/03read.t
-pipe( my ( $input, $pipe ) ) or die "Cannot pipe() - $!";
+# Use -1 for input. This causes Term::TermKey to create a an instance without
+# a file handle, and we can push bytes onto it.
+my $input = -1;
 
 # Setup output file handle to capture output in the $out scalar.
 open my $output, '>:utf8', \my $out or die "Cannot open output to scalar: $!";
@@ -107,4 +104,72 @@ $demo->nl_prompt;
 is $out, encode_utf8 "bagel ❯ \nbagel ❯ ",
     'Should have output newline and prompt';
 
+# Test wait_for_enter.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(a b 8 9 Enter));
+$demo->wait_for_enter;
+is $out, "\n", 'Should have newline after enter';
+
+# Test wait_for_escape.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(a b 8 9 Escape));
+$demo->wait_for_escape;
+is $out, "\n", 'Should have newline after escape';
+
+# Test type.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(a b c Enter));
+$demo->type('now');
+is $out, "now\n", 'Should have typed "now"';
+
+# Test type with emoji.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(a b c d Enter));
+$demo->type('go ⏰');
+is $out, encode_utf8("go ⏰\n"), 'Should have typed with emoji';
+
+# Test Enter to type to the end of a string.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(a b c Enter Enter));
+$demo->type(qw(now is the time));
+is $out, "now is the time\n", 'Should have typed "now is the time"';
+
+# Test Enter to type up to a newline.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(a b c Enter Enter Enter));
+$demo->type("now is the time\n", 'to drink coffee');
+is $out, "now is the time\n to drink coffee\n",
+    'Should have typed both lines';
+
+# Test type with escapes.
+reset_output;
+my $msg = 'It’s ' . $demo->bold('clobberin’');
+$demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
+$demo->type($msg);
+is $out, encode_utf8("$msg\n"), 'Should have typed with ';
+
 done_testing;
+
+{
+    package MockTermKey;
+
+    sub new {
+        my $pkg = shift;
+        return bless { keys => [map { MockKey->new($_) } @_] } => $pkg;
+    }
+
+    sub waitkey {
+        my $self = shift;
+        die "No keys left to return from waitkey" unless @{ $self->{keys} };
+        $_[0] = shift @{ $self->{keys} };
+    }
+
+    package MockKey;
+
+    sub new {
+        my $pkg = shift;
+        return bless { format => shift } => $pkg;
+    }
+
+    sub format { return $_[0]->{format} }
+}
