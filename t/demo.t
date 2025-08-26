@@ -7,6 +7,7 @@ use utf8;
 use Encode qw(encode_utf8);
 use Test::More 'no_plan';
 use Test::MockModule;
+use Test::File::Contents;
 
 BEGIN {
     delete $ENV{PERSON};
@@ -179,7 +180,6 @@ my $exp = $demo->bold("# I like corn\n# Like a lot\n# You too?");
 is $out, "$exp\nbagel $gt ", 'Should have emitted comment';
 
 # Mock the IPC::System::Simple functions.
-my $module = Test::MockModule->new('Theory::Demo');
 my $ipc = MockSystem->new;
 $module->mock(run => sub { $ipc->run(@_) });
 $module->mock(runx => sub { $ipc->runx(@_) });
@@ -298,6 +298,104 @@ is $out, "ls -lah\n",
 is_deeply $ipc->args, { run => [["ls -lah"]]},
     'Should have passed command to run';
 
+# Test _yq.
+reset_output;
+$ipc->setup(runx_callback => sub {
+    my $fn = pop @{ $_[0] };
+    file_contents_eq $fn, 'some YAML', 'Should have written YAML to temp file';
+});
+Theory::Demo::_yq("some YAML");
+is_deeply $ipc->args, {runx => [[qw(yq -oj)]]}, 'Should have called yq';
+
+# Test yq.
+reset_output;
+$ipc->setup;
+$demo->yq("some_file.yaml");
+is $out, "yq -oj . some_file.yaml\n\nbagel $gt ",
+    'Should have typed yq command and then the prompt';
+is_deeply $ipc->args, { run => [["yq -oj . some_file.yaml"]]},
+    'Should have executed yq on the file';
+
+reset_output;
+$ipc->setup;
+$demo->yq("some_file.yaml", ".body.profile");
+is $out, "yq -oj .body.profile some_file.yaml\n\nbagel $gt ",
+    'Should have typed yq command with path and then the prompt';
+is_deeply $ipc->args, { run => [["yq -oj .body.profile some_file.yaml"]]},
+    'Should have executed yq with the path on the file';
+
+# Test type_run_yq.
+reset_output;
+$ipc->setup(
+    capture_returns => ["name: theory\ncat: bagel"],
+    runx_callback => sub {
+        my $fn = pop @{ $_[0] };
+        file_contents_eq $fn, "name: theory\ncat: bagel",
+            'Should have written YAML to temp file';
+    },
+);
+$demo->type_run_yq('cat file.yaml');
+is_deeply $ipc->args, {
+    runx => [[qw(yq -oj)]],
+    capture => [['cat file.yaml']]
+}, 'Should have captured the command and called yq';
+is $out, "cat file.yaml\n", 'Should have echoed command then prompt';
+
+# Test diff.
+reset_output;
+$ipc->setup;
+$demo->diff("file1.text", "file2.text");
+is_deeply $ipc->args, {
+    run => [["diff -u --color file1.text file2.text || true"]],
+}, 'Should run the files through diff';
+is $out, "diff -u file1.text file2.text\n\nbagel $gt ",
+    'Should have typed diff command then prompt';
+
+# Test decode_json_file.
+reset_output;
+is_deeply $demo->decode_json_file('t/resource.json'), {
+  identifier => Math::BigInt->new("113059749145936325402354257176981405696"),
+  number     => 9999,
+  active     => JSON::PP::true,
+  username   => "chrissy",
+  name       => "Chrisjen Avasarala",
+}, 'Should have read JSON from file';
+
+# Test type_run_psql with a short query.
+reset_output;
+$ipc->setup;
+$demo->type_run_psql("SELECT COUNT(*) FROM users");
+is $out, qq{psql -tXxc "SELECT COUNT(*) FROM users"\n\nbagel $gt },
+    'Should have one-line query output';
+is_deeply $ipc->args, {
+    run => [[qq{psql -tXxc "SELECT COUNT(*) FROM users"}]],
+}, 'Should have run the psql command';
+
+# Test with a single long line.
+reset_output;
+$ipc->setup;
+my $sql = q{    SELECT COUNT(*) FROM public.users WHERE name LIKE 'Smith%' AND status = 'active'};
+$demo->type_run_psql($sql);
+is $out, qq{psql -tXxc "\n$sql\n"\n\nbagel $gt },
+    'Should have long query on own line';
+is_deeply $ipc->args, {
+    run => [[qq{psql -tXxc "$sql"}]],
+}, 'Should have run the psql command';
+
+# Test with multiple lines.
+reset_output;
+$ipc->setup;
+my @sql = (
+    q{    SELECT COUNT(*) FROM public.users},
+    q{    WHERE  name LIKE 'Smith%'},
+    q{    AND    status = 'active'},
+);
+$demo->type_run_psql(@sql);
+is $out, qq{psql -tXxc "\n} . join("\n", @sql) . qq{\n"\n\nbagel $gt },
+    'Should have query on multiple lines';
+is_deeply $ipc->args, {
+    run => [[qq{psql -tXxc "} . join(' ', @sql) . qq{"}]],
+}, 'Should have run the multiline psql command';
 
 done_testing;
 
@@ -343,6 +441,7 @@ MOCKS: {
             runx_args        => [],
             runx_returns     => [],
             runx_errors      => [],
+            runx_callback    => undef,
 
             capture_args     => [],
             capture_returns  => [],
@@ -375,6 +474,7 @@ MOCKS: {
 
     sub runx {
         my $self = shift;
+        $self->{runx_callback}->(\@_) if $self->{runx_callback};
         push @{ $self->{runx_args} } => \@_;
         if (my $err = shift @{ $self->{runx_errors} }) {
             die $err;

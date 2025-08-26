@@ -24,5 +24,6 @@ apt-install-deps:
       libterm-termkey-perl \
       liburi-perl \
       libwww-curl-simple-perl \
+      libtest-file-contents-perl \
       libtest-mockmodule-perl \
       postgresql-client

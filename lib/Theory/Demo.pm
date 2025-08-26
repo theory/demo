@@ -11,7 +11,7 @@ use File::Temp;
 use Getopt::Long;
 use IO::Socket::SSL;
 use IPC::System::Simple 1.17 qw(capturex run runx capture);
-use JSON::PP;
+use JSON::PP ();
 use Math::BigInt;
 use Net::SSLeay;
 use Term::ANSIColor ();
@@ -337,7 +337,7 @@ sub grab {
 
 =head C<type_lines>
 
-Type out a list of lines to be "run", appending a backslash to all but the
+Types out a list of lines to be "run", appending a backslash to all but the
 last, but without actually running anything. Emulates a multi-line shell
 command.
 
@@ -353,7 +353,7 @@ sub type_lines {
 
 =head C<type_run>
 
-Typ out a multi-line command and then runs it.
+Types out a multi-line command and then runs it.
 
 =cut
 
@@ -365,7 +365,7 @@ sub type_run {
 
 =head C<run_quiet>
 
-Run a multi-line command without first echoing it.
+Runs a multi-line command without first echoing it.
 
 =cut
 
@@ -396,26 +396,43 @@ sub type_run_clean {
 sub _yq {
     my $fh = File::Temp->new;
     print {$fh} @_;
+    $fh->close;
     runx qw(yq -oj), $fh->filename;
 }
 
-# Selects a path from a JSON JSON file using yq for pretty-printing.
+=head C<yq>
+
+  $demo->yq('some_file.yaml');
+  $demo->yq('some_file.yml', ".body.profile");
+
+Selects and output a path from a JSON file using C<yq> for pretty-printing.
+
+=cut
+
 sub yq {
     my ($self, $file, $path) = @_;
     $self->type_run(join ' ', 'yq -oj', ($path // '.'), $file);
     $self->nl_prompt;
 }
 
-# Pipe command output to yq.
+=head C<type_run_yq>
+
+Types out a multi-line command and then pipes its output to C<yq>.
+
+=cut
+
 sub type_run_yq {
     my $self = shift;
     $self->type_lines(@_);
-    my $cmd = $self->_env(join ' ', @_);
-    run $cmd;
-    _yq capture $cmd;
+    _yq capture $self->_env(join ' ', @_);
 }
 
-# Diff two files. Requires `--color`; on macOS, `brew install diffutils`.
+=head C<diff>
+
+Diffs two files. Requires C<--color>. On macOS, `brew install diffutils`.
+
+=cut
+
 sub diff {
     my $self = shift;
     $self->type_lines('diff -u ' . join ' ', @_);
@@ -423,23 +440,39 @@ sub diff {
     $self->nl_prompt;
 }
 
-# Decode the contents of a file into JSON and return the resulting Perl value.
+=head C<decode_json_file>
+
+Decodes the contents of a file into JSON and returns the resulting Perl
+value. Decodes large numbers into L<Math::BigInt> or L<Math::BigFloat>
+values, as appropriate.
+
+=cut
+
 sub decode_json_file {
     my $self = shift;
     my $path = $self->_env(shift);
     open my $fh, '<:raw', $path or die "Cannot open $path: $!\n";
-    return decode_json join '', <$fh>;
+    return JSON::PP->new->utf8->allow_bignum->decode(join '', <$fh>);
 }
 
-# Echos and runs `psql -tXxc "$query"` then calls C<nl_prompt>. The query may
-# be multiple lines and must not contain double quotes.
-sub type_run_psql_query {
+=head C<type_run_psql_query>
+
+Emits C<psql -tXxc "$query">, executes it, then calls C<nl_prompt>. The
+query may be multiple lines and must not contain double quotes.
+
+Prints a single line if there is only one line passed and it's less than 72
+characters long. Otherwise prints the query on multiple lines; consider
+indenting each line.
+
+=cut
+
+sub type_run_psql {
     my $self = shift;
-    $self->type($_) for (
-        qq{psql -tXxc "\n},
-        join("\n", @_),
-        qq{\n"}
-    );
+    if (@_ == 1 && length $_[0] < 72) {
+        $self->type(qq{psql -tXxc "$_[0]"});
+    } else {
+        $self->type(qq{psql -tXxc "\n} . join("\n", @_) . qq{\n"});
+    }
     run $self->_env('psql -tXxc "' . join(' ', @_) . '"');
     $self->nl_prompt;
 }
