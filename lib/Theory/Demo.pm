@@ -328,16 +328,21 @@ Grab and return the output of a command.
 
 =cut
 
-sub grab() {
+sub grab {
     shift;
     my $out = capturex @_;
     chomp $out;
     $out;
 }
 
-# Type out a list of lines to be "run", appending a backslash to all but the
-# last, but without actually running anything. Emulates a multi-line shell
-# command.
+=head C<type_lines>
+
+Type out a list of lines to be "run", appending a backslash to all but the
+last, but without actually running anything. Emulates a multi-line shell
+command.
+
+=cut
+
 sub type_lines {
     my $self = shift;
     while (@_ > 1) {
@@ -346,29 +351,45 @@ sub type_lines {
     $self->type(shift);
 }
 
-# Types out a multi-line command and then runs it.
+=head C<type_run>
+
+Typ out a multi-line command and then runs it.
+
+=cut
+
 sub type_run {
     my $self = shift;
     $self->type_lines(@_);
     run $self->_env(join ' ', @_);
 }
 
-# Runs a multi-line command without first echoing it.
+=head C<run_quiet>
+
+Run a multi-line command without first echoing it.
+
+=cut
+
 sub run_quiet {
     my $self = shift;
     run $self->_env(join ' ', @_);
 }
 
-# Like type_run, but captures the output of the command and replaces any string
-# matching C<$ENV{TMPDIR}> wih F</tmp> before printing it, to avoid displaying
-# the long, ugly macOS tmpdir name.
+=head C<type_run_clean>
+
+Like type_run, but captures the output of the command and replaces any string
+matching C<$TMPDIR> wih F</tmp> before printing it, to avoid displaying a
+long, ugly macOS tmpdir name.
+
+=cut
+
 sub type_run_clean {
     my $self = shift;
+    return $self->type_run(@_) unless $self->{env}{TMPDIR};
     $self->type_lines(@_);
-    for (capture $self->_env(join ' ', @_)) {
-        s{$ENV{TMPDIR}/*}{/tmp/}g;
-        $self->emit($_);
-    }
+    $self->emit(
+        map { s{\Q$self->{env}{TMPDIR}\E}{/tmp}gr }
+        capture $self->_env(join ' ', @_),
+    );
 }
 
 # Runs a JSON object through yq for pretty-printing.

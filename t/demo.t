@@ -88,16 +88,17 @@ is Term::ANSIColor::colored([qw(bold bright_yellow)], "😀➡︎Ã"),
     $demo->bold("😀➡︎Ã"), "Should get bold bright yellow from bold(unicode)";
 
 # Test emit.
+my @lorum = (
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do ",
+    "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut ",
+    "enim ad minim veniam, quis nostrud exercitation ullamco laboris ",
+    "nisi ut aliquip ex ea commodo consequat.",
+);
+
 for my $lines (
     ["one line", "this is the start of something new."],
     ["two words", "this", "that"],
-    [
-        "Lorum ipsum",
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do ",
-        "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut ",
-        "enim ad minim veniam, quis nostrud exercitation ullamco laboris ",
-        "nisi ut aliquip ex ea commodo consequat.",
-    ],
+    \@lorum,
     ["Emoji", "⌚➡️ 🥶 😞 😔."],
 ) {
     reset_output;
@@ -159,15 +160,9 @@ $demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
 $demo->type($msg);
 is $out, encode_utf8("$msg\n"), 'Should have typed with ';
 
-# Swizzle the type method from here on.
-SWIZZLE: {
-    no warnings 'redefine';
-    *Theory::Demo::type = sub {
-        isa_ok my $d = shift, 'Theory::Demo';
-        $d->emit(@_, "\n");
-    }
-}
-
+# Mock the type() method from here on.
+my $module = Test::MockModule->new('Theory::Demo');
+$module->mock(type => sub { shift->emit(@_, "\n") });
 reset_output;
 $demo->type('howdy');
 is_deeply $out, "howdy\n", 'Should have swizzled type()';
@@ -236,6 +231,73 @@ is $demo->_env("foo \$PERSON bar"), "foo theory bar",
     "_env should replace \$PERSON with the variable value";
 is $demo->_env("foo \$FELINE bar"), "foo bagel bar",
     "_env should replace \$FELINE with the variable value";
+
+# Test grab.
+reset_output;
+$ipc->setup(capturex_returns => ["some output\n"]);
+is $demo->grab(qw(ls -lah)), 'some output', 'Should have chomped output';
+is_deeply $ipc->args, {capturex => [[qw(ls -lah)]]},
+    'Should have executed command';
+
+reset_output;
+$ipc->setup(capturex_returns => ["some output\nand more output\n"]);
+is $demo->grab(qw(ls -ahl)), "some output\nand more output",
+    'Should have chomped multiline output';
+is_deeply $ipc->args, {capturex => [[qw(ls -ahl)]]},
+    'Should have executed command';
+
+# Test type_lines.
+reset_output;
+$demo->type_lines($lorum[0]);
+is $out, "$lorum[0]\n", 'Should have typed single line';
+
+reset_output;
+$demo->type_lines(@lorum);
+is $out, join(" \\\n", @lorum) . "\n", 'Should have typed multiple lines';
+
+# Test type_run.
+reset_output;
+$ipc->setup;
+$demo->type_run($lorum[0]);
+is $out, "$lorum[0]\n", 'Should have typed single line';
+is_deeply $ipc->args, { run => [[$lorum[0]]]},
+    'Should have executed single line';
+
+reset_output;
+$ipc->setup;
+$demo->type_run(@lorum);
+is $out, join(" \\\n", @lorum) . "\n", 'Should have typed multiple lines';
+is_deeply $ipc->args, { run => [[join ' ' => @lorum]]},
+    'Should have executed multiple lines';
+
+# Test run_quiet.
+reset_output;
+$ipc->setup;
+$demo->run_quiet(@lorum);
+is $out, '', 'Should have no output';
+is_deeply $ipc->args, { run => [[join ' ' => @lorum]]},
+    'Should have executed multiple lines';
+
+# Test type_run_clean.
+reset_output;
+$ipc->setup(capture_returns => ["this is /tmp/foo/bar/baz lol\n"]);
+$demo->{env}{TMPDIR} = '/tmp/foo/bar';
+$demo->type_run_clean("ls -lah");
+is $out, "ls -lah\nthis is /tmp/baz lol\n",
+    'Should have typed command and cleaned output';
+is_deeply $ipc->args, { capture => [["ls -lah"]]},
+    'Should have passed command to capture';
+
+# Test with no TMPDIR.
+reset_output;
+delete $demo->{env}{TMPDIR};
+$ipc->setup;
+$demo->type_run_clean("ls -lah");
+is $out, "ls -lah\n",
+    'Should have typed command and uncleaned output';
+is_deeply $ipc->args, { run => [["ls -lah"]]},
+    'Should have passed command to run';
+
 
 done_testing;
 
