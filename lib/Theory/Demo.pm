@@ -84,6 +84,10 @@ sub new {
     $params{out}->autoflush(1);
     $params{out}->binmode(':utf8');
 
+    # Set up environment.
+    $params{env} = {%ENV};
+    $params{env}->{TMPDIR} =~ s/\/+\z// if $ENV{TMPDIR};
+
     # Trim trailing slash from base URL and return the object.
     $params{base_url} =~ s/\/+\z// if $params{base_url};
     return bless { prompt => 'demo', %params } => $pkg;
@@ -237,42 +241,84 @@ followed by a prompt.
 
 sub start {
     my $self = shift;
-    runx 'clear';
-    $self->prompt;
+    $self->clear_now;
     $self->comment(@_) if @_;
 }
 
-sub finish {
-    my $self = shift;
-    $self->type($self->bold(map { s/^/# /grm } @_)) if @_;
-}
+=head3 C<clear>
+
+Types "clear" then clears the screen and emits a prompt.
+
+=cut
 
 sub clear {
     my $self = shift;
     $self->type('clear');
-    runx 'clear';
-    $self->prompt;
+    $self->clear_now;
 }
+
+=head3 C<clear>
+
+Clears the screen and emits a prompt.
+
+=cut
 
 sub clear_now {
     runx 'clear';
     shift->prompt;
 }
 
-# $ENV{TMPDIR} =~ s{/+$}{};
-my %env = %ENV;
+=head3 C<setenv>
+
+Sets an environment variable to a value, after which the variables can be
+used in arguments to the following functions where they will be emitted as a
+variable but the variable will be replaced before execution. System variables
+are included by default so can just be used. Variables used in the value
+passed to C<setenv> will be interpolated.
+
+=over
+
+=item * C<type_run>
+
+=item * C<run_quiet>
+
+=item * C<type_run_clean>
+
+=item * C<type_run_yq>
+
+=item * C<decode_json_file>
+
+=item * C<type_run_psql_query>
+
+=item * C<get_quiet>
+
+=item * C<get>
+
+=item * C<del>
+
+=item * C<post>
+
+=item * C<put>
+
+=item * C<patch>
+
+=item * C<query>
+
+=back
+
+=cut
 
 sub _env {
-    $_[0] =~ s/\$(\w+)/$env{$1} || $1/gerx if $_[0]
+    my $self = shift;
+    $_[0] =~ s/\$(\w+)/$self->{env}{$1} || $1/gerx if $_[0]
 }
 
 sub setenv {
     my $self = shift;
     my ($k, $v) = @_;
-    $env{$k} = _env $v;
+    $self->{env}{$k} = $self->_env($v);
     $self->echo(qq{$k="$v"});
 }
-
 
 =head3 C<grab>
 
@@ -304,13 +350,13 @@ sub type_lines {
 sub type_run {
     my $self = shift;
     $self->type_lines(@_);
-    run _env join ' ', @_;
+    run $self->_env(join ' ', @_);
 }
 
 # Runs a multi-line command without first echoing it.
 sub run_quiet {
     my $self = shift;
-    run _env join ' ', @_;
+    run $self->_env(join ' ', @_);
 }
 
 # Like type_run, but captures the output of the command and replaces any string
@@ -319,7 +365,7 @@ sub run_quiet {
 sub type_run_clean {
     my $self = shift;
     $self->type_lines(@_);
-    for (capture _env join ' ', @_) {
+    for (capture $self->_env(join ' ', @_)) {
         s{$ENV{TMPDIR}/*}{/tmp/}g;
         $self->emit($_);
     }
@@ -343,8 +389,9 @@ sub yq {
 sub type_run_yq {
     my $self = shift;
     $self->type_lines(@_);
-    run _env join ' ', @_;
-    _yq capture _env join ' ', @_;
+    my $cmd = $self->_env(join ' ', @_);
+    run $cmd;
+    _yq capture $cmd;
 }
 
 # Diff two files. Requires `--color`; on macOS, `brew install diffutils`.
@@ -358,7 +405,7 @@ sub diff {
 # Decode the contents of a file into JSON and return the resulting Perl value.
 sub decode_json_file {
     my $self = shift;
-    my $path = _env shift;
+    my $path = $self->_env(shift);
     open my $fh, '<:raw', $path or die "Cannot open $path: $!\n";
     return decode_json join '', <$fh>;
 }
@@ -372,7 +419,7 @@ sub type_run_psql_query {
         join("\n", @_),
         qq{\n"}
     );
-    run _env 'psql -tXxc "' . join(' ', @_) . '"';
+    run $self->_env('psql -tXxc "' . join(' ', @_) . '"');
     $self->nl_prompt;
 }
 
@@ -444,7 +491,7 @@ sub _data($) {
 
 sub get_quiet {
     my ($self, $path, $expect_status) = @_;
-    my $url = URI->new($self->{base_url} . '/' . _env $path);
+    my $url = URI->new($self->{base_url} . '/' . $self->_env($path));
     $self->handle(
         $self->request(GET => $url),
         $expect_status || 200, # OK
@@ -512,7 +559,7 @@ sub _type_url {
         $method, "$self->{base_url}/$path",
         (defined $data ? ($data) : ()),
     );
-    return URI->new($self->{base_url} . '/' . _env $path);
+    return URI->new($self->{base_url} . '/' . $self->_env($path));
 }
 
 =head3 C<tail_log>
@@ -528,3 +575,5 @@ sub tail_log {
     $self->type_run("docker logs -n $num_lines $container");
     $self->nl_prompt;
 }
+
+1;

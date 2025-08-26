@@ -8,8 +8,14 @@ use Encode qw(encode_utf8);
 use Test::More 'no_plan';
 use Test::MockModule;
 
-BEGIN { use_ok 'Theory::Demo' or die }
-$ENV{TERM} = "vt100";
+BEGIN {
+    delete $ENV{PERSON};
+    delete $ENV{FELINE};
+    $ENV{TMPDIR} =~ s/\/+\z// if $ENV{TMPDIR};
+    $ENV{TERM} = "vt100";
+
+    use_ok 'Theory::Demo' or die
+}
 
 # Use -1 for input. This causes Term::TermKey to create a an instance without
 # a file handle, and we can push bytes onto it.
@@ -31,8 +37,10 @@ is_deeply $demo->{head}, HTTP::Headers->new, 'Should have empty headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'demo', 'Should have default prompt';
 is $demo->{out}, \*STDOUT, 'Should point to STDOUT';
+is_deeply $demo->{env}, {%ENV}, 'Should have copied %ENV';
 
 # Test all params.
+$ENV{HARPO_TEST_VAL} = 'gargantuan';
 ok $demo = Theory::Demo->new(
     prompt    => 'bagel',
     base_url  => 'https://hi/',
@@ -53,6 +61,7 @@ is_deeply $head, $demo->{head}, , 'Should have configured headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'bagel', 'Should have specified prompt';
 is $demo->{out}, $output, 'Should point to output file handle';
+is_deeply $demo->{env}, {%ENV}, 'Should have copied %ENV';
 
 # Test b58_uuid.
 is $demo->b58_uuid('NpAkRPsPPhzrRWWKPJgi5V'),
@@ -155,24 +164,24 @@ SWIZZLE: {
     no warnings 'redefine';
     *Theory::Demo::type = sub {
         isa_ok my $d = shift, 'Theory::Demo';
-        $d->emit(@_);
+        $d->emit(@_, "\n");
     }
 }
 
 reset_output;
 $demo->type('howdy');
-is_deeply $out, 'howdy', 'Should have swizzled type()';
+is_deeply $out, "howdy\n", 'Should have swizzled type()';
 
 # Test echo.
 reset_output;
-$demo->echo("I like corn\n", "Like a lot\n");
+$demo->echo("I like corn\n", "Like a lot");
 is $out, "I like corn\nLike a lot\nbagel $gt ", 'Should have echoed output';
 
 # Test comment.
 reset_output;
-$demo->comment("I like corn\nLike a lot\n", "You too?\n");
-my $exp = $demo->bold("# I like corn\n# Like a lot\n# You too?\n");
-is $out, $exp . "bagel $gt ", 'Should have emitted comment';
+$demo->comment("I like corn\nLike a lot\n", "You too?");
+my $exp = $demo->bold("# I like corn\n# Like a lot\n# You too?");
+is $out, "$exp\nbagel $gt ", 'Should have emitted comment';
 
 # Mock the IPC::System::Simple functions.
 my $module = Test::MockModule->new('Theory::Demo');
@@ -193,7 +202,40 @@ $ipc->setup;
 $demo->start('howdy');
 $msg = $demo->bold('# howdy');
 is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
-is $out, "bagel $gt ${msg}bagel $gt ", 'Should have output prompt and comment';
+is $out, "bagel $gt $msg\nbagel $gt ", 'Should have output prompt and comment';
+
+# Test clear.
+reset_output;
+$ipc->setup;
+$demo->clear;
+is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
+is $out, "clear\nbagel $gt ", 'Should have output clear and prompt';
+
+# Test clear_now.
+reset_output;
+$ipc->setup;
+$demo->clear_now;
+is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
+is $out, "bagel $gt ", 'Should have output just the prompt';
+
+# Test setenv and env.
+for (my ($k, $v) = each %ENV) {
+    is $demo->_env("foo \$$k bar"), "foo $v bar", "_env should replace \$$k";
+}
+
+# Test with unknown variables.
+is $demo->_env("foo \$PERSON bar"), "foo PERSON bar",
+    "_env should replace \$PERSON with the variable name";
+is $demo->_env("foo \$FELINE bar"), "foo FELINE bar",
+    "_env should replace \$FELINE with the variable name";
+
+# Add more variables.
+$demo->setenv(PERSON => 'theory');
+$demo->setenv(FELINE => 'bagel');
+is $demo->_env("foo \$PERSON bar"), "foo theory bar",
+    "_env should replace \$PERSON with the variable value";
+is $demo->_env("foo \$FELINE bar"), "foo bagel bar",
+    "_env should replace \$FELINE with the variable value";
 
 done_testing;
 
