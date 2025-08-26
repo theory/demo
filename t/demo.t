@@ -97,11 +97,12 @@ for my $lines (
 }
 
 # Test prompt.
+my $gt = "\xe2\x9d\xaf";
 reset_output;
 $demo->prompt;
-is $out, encode_utf8 "bagel ❯ ", 'Should have output prompt';
+is $out, "bagel $gt ", 'Should have output prompt';
 $demo->nl_prompt;
-is $out, encode_utf8 "bagel ❯ \nbagel ❯ ",
+is $out, "bagel $gt \nbagel $gt ",
     'Should have output newline and prompt';
 
 # Test wait_for_enter.
@@ -147,6 +148,31 @@ my $msg = 'It’s ' . $demo->bold('clobberin’');
 $demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
 $demo->type($msg);
 is $out, encode_utf8("$msg\n"), 'Should have typed with ';
+
+# Swizzle the type method from here on.
+SWIZZLE: {
+    no warnings 'redefine';
+    *Theory::Demo::type = sub {
+        isa_ok my $d = shift, 'Theory::Demo';
+        $d->emit(@_);
+    }
+}
+
+reset_output;
+$demo->type('howdy');
+is_deeply $out, 'howdy', 'Should have swizzled type()';
+
+# Test echo.
+reset_output;
+$demo->echo("I like corn\n", "Like a lot\n");
+is $out, "I like corn\nLike a lot\nbagel $gt ", 'Should have echoed output';
+
+# Test comment.
+reset_output;
+$demo->comment("I like corn\nLike a lot\n", "You too?\n");
+my $exp = $demo->bold("# I like corn\n# Like a lot\n# You too?\n");
+is $out, $exp . "bagel $gt ", 'Should have emitted comment';
+
 
 done_testing;
 
