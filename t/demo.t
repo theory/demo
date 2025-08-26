@@ -6,6 +6,7 @@ use warnings;
 use utf8;
 use Encode qw(encode_utf8);
 use Test::More 'no_plan';
+use Test::MockModule;
 
 BEGIN { use_ok 'Theory::Demo' or die }
 $ENV{TERM} = "vt100";
@@ -173,10 +174,30 @@ $demo->comment("I like corn\nLike a lot\n", "You too?\n");
 my $exp = $demo->bold("# I like corn\n# Like a lot\n# You too?\n");
 is $out, $exp . "bagel $gt ", 'Should have emitted comment';
 
+# Mock the IPC::System::Simple functions.
+my $module = Test::MockModule->new('Theory::Demo');
+my $ipc = MockSystem->new;
+$module->mock(run => sub { $ipc->run(@_) });
+$module->mock(runx => sub { $ipc->runx(@_) });
+$module->mock(capture => sub { $ipc->capture(@_) });
+$module->mock(capturex => sub { $ipc->capturex(@_) });
+
+# Test start.
+reset_output;
+$demo->start;
+is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
+is $out, "bagel $gt ", 'Should have output prompt';
+
+reset_output;
+$ipc->setup;
+$demo->start('howdy');
+$msg = $demo->bold('# howdy');
+is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
+is $out, "bagel $gt ${msg}bagel $gt ", 'Should have output prompt and comment';
 
 done_testing;
 
-{
+MOCKS: {
     package MockTermKey;
 
     sub new {
@@ -198,4 +219,80 @@ done_testing;
     }
 
     sub format { return $_[0]->{format} }
+
+    package MockSystem;
+
+    sub new {
+        my $pkg = shift;
+        my $self = bless {} => $pkg;
+        $self->setup(@_);
+        return $self;
+    }
+
+    sub setup {
+        my ($self, %p) = @_;
+        %{ $self } = (
+            run_args         => [],
+            run_returns      => [],
+            run_errors       => [],
+
+            runx_args        => [],
+            runx_returns     => [],
+            runx_errors      => [],
+
+            capture_args     => [],
+            capture_returns  => [],
+            capture_errogs   => [],
+
+            capturex_args    => [],
+            capturex_returns => [],
+            capturex_errors  => [],
+            %p,
+        )
+    }
+
+    sub args {
+        my $self = shift;
+        return {
+            map { $_ => $self->{$_ . '_args'} }
+            grep { @{ $self->{$_ . '_args'} } }
+            qw( run runx capture capturex )
+        }
+    }
+
+    sub run {
+        my $self = shift;
+        push @{ $self->{run_args} } => \@_;
+        if (my $err = shift @{ $self->{run_errors} }) {
+            die $err;
+        }
+        return shift @{ $self->{run_returns} };
+    }
+
+    sub runx {
+        my $self = shift;
+        push @{ $self->{runx_args} } => \@_;
+        if (my $err = shift @{ $self->{runx_errors} }) {
+            die $err;
+        }
+        return shift @{ $self->{runx_returns} };
+    }
+
+    sub capture {
+        my $self = shift;
+        push @{ $self->{capture_args} } => \@_;
+        if (my $err = shift @{ $self->{capture_errors} }) {
+            die $err;
+        }
+        return shift @{ $self->{capture_returns} };
+    }
+
+    sub capturex {
+        my $self = shift;
+        push @{ $self->{capturex_args} } => \@_;
+        if (my $err = shift @{ $self->{capturex_errors} }) {
+            die $err;
+        }
+        return shift @{ $self->{capturex_returns} };
+    }
 }

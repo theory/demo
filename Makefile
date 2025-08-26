@@ -14,7 +14,7 @@ test:
 registry:
 	docker run -d -p 5001:5000 --restart always --name registry registry:3
 
-.PHONY: apt-install-deps # Install Apt dependencies.
+.PHONY: apt-install-deps # Install Apt dependencies for testing.
 apt-install-deps:
 	apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -24,4 +24,5 @@ apt-install-deps:
       libterm-termkey-perl \
       liburi-perl \
       libwww-curl-simple-perl \
+      libtest-mockmodule-perl \
       postgresql-client

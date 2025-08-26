@@ -228,14 +228,18 @@ sub comment {
     $self->echo($self->bold(map { s/^/# /grm } @_));
 }
 
+=head3 C<start>
+
+Clears the screen, emits a prompt, and emits any arguments as comments
+followed by a prompt.
+
+=cut
+
 sub start {
     my $self = shift;
-    run 'clear';
+    runx 'clear';
     $self->prompt;
-    if (@_) {
-        $self->type($self->bold(map { s/^/# /grm } @_));
-        $self->prompt;
-    }
+    $self->comment(@_) if @_;
 }
 
 sub finish {
@@ -246,12 +250,12 @@ sub finish {
 sub clear {
     my $self = shift;
     $self->type('clear');
-    run 'clear';
+    runx 'clear';
     $self->prompt;
 }
 
 sub clear_now {
-    run 'clear';
+    runx 'clear';
     shift->prompt;
 }
 
