@@ -4,7 +4,6 @@ use v5.28;
 use strict;
 use warnings;
 use utf8;
-use open IN => ":encoding(utf8)", OUT => ":utf8";
 
 use Crypt::Misc qw(decode_b58b);
 use Encode qw(encode_utf8 decode_utf8);
@@ -60,6 +59,7 @@ File handle to which to send output. Defaults to C<STDOUT>.
 
 sub new {
     my ($pkg, %params) = @_;
+    # Set up Curl.
     if ($params{ca_bundle}) {
         $params{curl} = WWW::Curl::Simple->new(
             check_ssl_certs => 1,
@@ -68,17 +68,24 @@ sub new {
     } else {
         $params{curl} = WWW::Curl::Simple->new;
     }
+
+    # Configure request headers.
     $params{head} = HTTP::Headers->new(
         #'Content-Type'  => 'application/json',
     );
     if (my $u = delete $params{user}) {
         $params{head}->authorization_basic($u);
     }
-    $params{tk} = Term::TermKey->new( delete $params{input} || \*STDIN );
-    $params{base_url} =~ s/\/+\z// if $params{base_url};
+
+    # Set up input and output file handles.
+    $params{tk} = Term::TermKey->new(delete $params{input} || \*STDIN);
+    $params{tk}->set_flags(Term::TermKey::FLAG_UTF8);
     $params{out} = delete $params{output} || \*STDOUT;
     $params{out}->autoflush(1);
+    $params{out}->binmode(':utf8');
 
+    # Trim trailing slash from base URL and return the object.
+    $params{base_url} =~ s/\/+\z// if $params{base_url};
     return bless { prompt => 'demo', %params } => $pkg;
 }
 
@@ -223,7 +230,7 @@ sub comment {
 
 sub start {
     my $self = shift;
-    system 'clear';
+    run 'clear';
     $self->prompt;
     if (@_) {
         $self->type($self->bold(map { s/^/# /grm } @_));
@@ -239,12 +246,12 @@ sub finish {
 sub clear {
     my $self = shift;
     $self->type('clear');
-    system 'clear';
+    run 'clear';
     $self->prompt;
 }
 
 sub clear_now {
-    system 'clear';
+    run 'clear';
     shift->prompt;
 }
 
@@ -433,7 +440,7 @@ sub _data($) {
 
 sub get_quiet {
     my ($self, $path, $expect_status) = @_;
-    my $url = URI->new($self->{base_url} . _env $path);
+    my $url = URI->new($self->{base_url} . '/' . _env $path);
     $self->handle(
         $self->request(GET => $url),
         $expect_status || 200, # OK
@@ -444,7 +451,6 @@ sub get_quiet {
 sub get {
     my ($self, $path, $expect_status) = @_;
     my $url = $self->_type_url('GET', $path);
-    $self->emit($url, "\n");
     $self->handle(
         $self->request(GET => $url),
         $expect_status || 200, # OK
@@ -502,7 +508,7 @@ sub _type_url {
         $method, "$self->{base_url}/$path",
         (defined $data ? ($data) : ()),
     );
-    return URI->new($self->{base_url} . _env $path);
+    return URI->new($self->{base_url} . '/' . _env $path);
 }
 
 =head3 C<tail_log>
