@@ -20,8 +20,6 @@ use Term::TermKey;
 use URI;
 use WWW::Curl::Simple;
 
-$| = 1;
-
 =head1 Interface
 
 =head2 Constructor
@@ -77,8 +75,9 @@ sub new {
         $params{head}->authorization_basic($u);
     }
     $params{tk} = Term::TermKey->new( delete $params{input} || \*STDIN );
-    $params{out} = delete $params{output} || \*STDOUT;
     $params{base_url} =~ s/\/+\z// if $params{base_url};
+    $params{out} = delete $params{output} || \*STDOUT;
+    $params{out}->autoflush(1);
 
     return bless { prompt => 'demo', %params } => $pkg;
 }
@@ -96,6 +95,17 @@ sub bold {
     Term::ANSIColor::colored([qw(bold bright_yellow)], @_);
 }
 
+=head3 C<emit>
+
+Prints values to the output file handle.
+
+=cut
+
+sub emit {
+    my $self = shift;
+    print { $self ->{out} } @_;
+}
+
 =head3 C<prompt>
 
 Emits a prompt.
@@ -103,7 +113,7 @@ Emits a prompt.
 =cut
 
 sub prompt {
-    print "$_[0]->{prompt} > ";
+    $_[0]->emit("$_[0]->{prompt} ❯ ");
 }
 
 =head3 C<nl_prompt>
@@ -113,7 +123,7 @@ Emits a newline and a prompt.
 =cut
 
 sub nl_prompt {
-    print "\n$_[0]->{prompt} > ";
+    $_[0]->emit("\n$_[0]->{prompt} ❯ ");
 }
 
 =head3 C<enter>
@@ -123,12 +133,13 @@ Waits for the user to hit the enter key.
 =cut
 
 sub enter {
-    my $tk = shift->{tk};
+    my $self = shift;
+    my $tk = $self->{tk};
     $tk->waitkey(my $key);
     while ($key->format(0) ne "Enter") {
         $tk->waitkey($key);
     }
-    print "\n";
+    $self->emit("\n");
 }
 
 =head3 C<escape>
@@ -144,7 +155,7 @@ sub escape {
     while ($key->format(0) ne "Escape") {
         $tk->waitkey($key);
     }
-    print "\n";
+    $self->emit("\n");
 }
 
 =head3 C<type>
@@ -163,12 +174,12 @@ sub type {
     for (my $i = 0; $i < length $str; $i++) {
         $tk->waitkey(my $k);
         my $c = substr $str, $i, 1;
-        print $c;
+        $self->emit($c);
 
         # Check for enter key.
         if ($k->format(0) eq 'Enter') {
             while ($c ne "\n" && $i < length $str) {
-                print $c = substr $str, ++$i, 1;
+                $self->emit($c = substr $str, ++$i, 1);
             }
         }
 
@@ -177,10 +188,10 @@ sub type {
             # Print until the escape close character.
             while ($c ne "m") {
                 $c = substr $str, ++$i, 1;
-                print $c;
+                $self->emit($c);
             }
             # Print the first char after, if there is one.
-            print substr $str, ++$i, 1 if $i < length $str;
+            $self->emit(substr $str, ++$i, 1) if $i < length $str;
         }
     }
     $self->enter;
@@ -299,7 +310,7 @@ sub type_run_clean {
     $self->type_lines(@_);
     for (capture _env join ' ', @_) {
         s{$ENV{TMPDIR}/*}{/tmp/}g;
-        print;
+        $self->emit($_);
     }
 }
 
@@ -386,9 +397,9 @@ sub handle {
 
     my $head = $res->headers;
     unless ($quiet) {
-        say $res->protocol, " ", $res->code;
+        $self->emit($res->protocol, " ", $res->code, "\n");
         if (my $loc = $head->header('location')) {
-            say "Location: $loc";
+            $self->emit("Location: $loc\n");
         }
     }
 
@@ -400,7 +411,7 @@ sub handle {
         _yq $body;
         $self->nl_prompt;
     } elsif (!$quiet) {
-        say $body if $head->content_length;
+        $self->emit($body) if $head->content_length;
         $self->nl_prompt;
     }
     return $ret;
@@ -433,7 +444,7 @@ sub get_quiet {
 sub get {
     my ($self, $path, $expect_status) = @_;
     my $url = $self->_type_url('GET', $path);
-    say $url;
+    $self->emit($url, "\n");
     $self->handle(
         $self->request(GET => $url),
         $expect_status || 200, # OK

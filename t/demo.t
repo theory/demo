@@ -4,6 +4,7 @@ use v5.28;
 use strict;
 use warnings;
 use utf8;
+use Encode qw(encode_utf8);
 use Test::More 'no_plan';
 
 BEGIN { use_ok 'Theory::Demo' or die }
@@ -14,10 +15,18 @@ $ENV{TERM} = "vt100";
 # `perl: uniutil.c:183: unibi_from_term: Assertion `term != NULL' failed.`
 # So borrow this technique from Term::TermKey.
 # https://metacpan.org/release/PEVANS/Term-TermKey-0.19/source/t/03read.t
-pipe( my ( $rd, $wr ) ) or die "Cannot pipe() - $!";
+pipe( my ( $input, $pipe ) ) or die "Cannot pipe() - $!";
+
+# Setup output file handle to capture output in the $out scalar.
+open my $output, '>:utf8', \my $out or die "Cannot open output to scalar: $!";
+
+sub reset_output {
+    $out = '';
+    $output->seek(0, 0);
+}
 
 # Test just input param.
-ok my $demo = Theory::Demo->new(input => $rd),
+ok my $demo = Theory::Demo->new(input => $input),
      'Should create demo with just input param';
 is_deeply $demo->{curl}, WWW::Curl::Simple->new, 'Should have curl client';
 is_deeply $demo->{head}, HTTP::Headers->new, 'Should have empty headers';
@@ -31,8 +40,8 @@ ok $demo = Theory::Demo->new(
     base_url  => 'https://hi/',
     ca_bundle => 'foo',
     user      => 'peggy',
-    input     => $rd,
-    output    => $wr,
+    input     => $input,
+    output    => $output,
 ), 'Should create demo with all params';
 
 is_deeply $demo->{curl}, WWW::Curl::Simple->new(
@@ -45,44 +54,57 @@ $head->authorization_basic('peggy');
 is_deeply $head, $demo->{head}, , 'Should have configured headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'bagel', 'Should have specified prompt';
-is $demo->{out}, $wr, 'Should point to output file handle';
+is $demo->{out}, $output, 'Should point to output file handle';
 
-for my $tc (
-    {
-        b58 => 'NpAkRPsPPhzrRWWKPJgi5V', 
-        uuid => 'b0a5e079-b36a-47be-924b-367e4a230bb0',
-    },
-    {
-        b58 => 'LfkWo9c7pu2Nkn9HQgMgfF',
-        uuid => '9f46b6ce-0b70-437c-9055-8ea65a488216',
-    },
+# Test b58_uuid.
+is $demo->b58_uuid('NpAkRPsPPhzrRWWKPJgi5V'),
+    'b0a5e079-b36a-47be-924b-367e4a230bb0',
+    'Should parse UUID from NpAkRPsPPhzrRWWKPJgi5V';
+is $demo->b58_uuid('LfkWo9c7pu2Nkn9HQgMgfF'),
+    '9f46b6ce-0b70-437c-9055-8ea65a488216',
+    'Should parse UUID from LfkWo9c7pu2Nkn9HQgMgfF';
+
+# Test b58_int
+is $demo->b58_int('1111111j'), Math::BigInt->new(42),
+    "Should parse 42 from 1111111j";
+is $demo->b58_int('11114GmR58'), Math::BigInt->new(2147483647),
+    "Should parse max int32 from 11114GmR58";
+is $demo->b58_int('jpXCZedGfVQ'), Math::BigInt->new(18446744073709551615),
+    "Should parse max uint64 from jpXCZedGfVQ";
+is $demo->b58_int('11111111'), Math::BigInt->new(0),
+    "Should parse 0 from 11111111";
+
+# Test bold
+is Term::ANSIColor::colored([qw(bold bright_yellow)], "hi", "there"),
+    $demo->bold("hi", "there"), "Should get bold bright yellow from bold()";
+is Term::ANSIColor::colored([qw(bold bright_yellow)], "😀➡︎Ã"),
+    $demo->bold("😀➡︎Ã"), "Should get bold bright yellow from bold(unicode)";
+
+# Test emit.
+for my $lines (
+    ["one line", "this is the start of something new."],
+    ["two words", "this", "that"],
+    [
+        "Lorum ipsum",
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do ",
+        "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut ",
+        "enim ad minim veniam, quis nostrud exercitation ullamco laboris ",
+        "nisi ut aliquip ex ea commodo consequat.",
+    ],
+    ["Emoji", "⌚➡️ 🥶 😞 😔."],
 ) {
-    is $demo->b58_uuid($tc->{b58}), $tc->{uuid}, $tc->{b58};
+    reset_output;
+    my $desc = shift @{ $lines };
+    $demo->emit(@{ $lines });
+    is $out, encode_utf8 join('', @{ $lines }), "Should have emit $desc";
 }
 
-for my $tc (
-    {
-        test => '42',
-        b58 => '1111111j', 
-        int => Math::BigInt->new(42),
-    },
-    {
-        test => 'max_int32',
-        b58 => '11114GmR58',
-        int => Math::BigInt->new(2147483647),
-    },
-    {
-        test => 'max_uint64',
-        b58 => 'jpXCZedGfVQ',
-        int => Math::BigInt->new(18446744073709551615),
-    },
-    {
-        test => 'zero',
-        b58 => '11111111',
-        int => Math::BigInt->new(0),
-    },
-) {
-    is $demo->b58_int($tc->{b58}), $tc->{int}, "Test $tc->{test}";
-}
+# Test prompt.
+reset_output;
+$demo->prompt;
+is $out, encode_utf8 "bagel ❯ ", 'Should have output prompt';
+$demo->nl_prompt;
+is $out, encode_utf8 "bagel ❯ \nbagel ❯ ",
+    'Should have output newline and prompt';
 
 done_testing;

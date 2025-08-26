@@ -11,14 +11,5 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
       - name: apt-get install
-        run: >
-          sudo apt-get install -y --no-install-recommends
-          ca-certificates
-          libcryptx-perl
-          libio-socket-ssl-perl
-          libipc-system-simple-perl
-          libterm-termkey-perl
-          liburi-perl
-          libwww-curl-simple-perl
-          postgresql-client
+        run: sudo make apt-install-deps
       - run: make test
