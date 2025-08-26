@@ -8,7 +8,7 @@ image:
 
 .PHONY: test # Run the test suite.
 test:
-	prove -l
+	prove -lv
 
 .PHONY: registry # Run a Docker registry in Docker at localhost:5001.
 registry:

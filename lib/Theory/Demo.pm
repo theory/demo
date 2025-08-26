@@ -48,6 +48,14 @@ Path to a PEM-encoded certificate authority bundle.
 
 Username to include in the Authorization header. Defaults to "demo".
 
+=item C<input>
+
+File handle from which to read input. Defaults to C<STDIN>.
+
+=item C<output>
+
+File handle to which to send output. Defaults to C<STDOUT>.
+
 =back
 
 =cut
@@ -68,7 +76,8 @@ sub new {
     if (my $u = delete $params{user}) {
         $params{head}->authorization_basic($u);
     }
-    $params{tk} = Term::TermKey->new( \*STDIN );
+    $params{tk} = Term::TermKey->new( delete $params{input} || \*STDIN );
+    $params{out} = delete $params{output} || \*STDOUT;
     $params{base_url} =~ s/\/+\z// if $params{base_url};
 
     return bless { prompt => 'demo', %params } => $pkg;
