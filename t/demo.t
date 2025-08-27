@@ -240,6 +240,7 @@ is $out, "bagel $gt ", 'Should have output just the prompt';
 
 ##############################################################################
 # Test setenv and env.
+delete $ENV{TMPDIR};
 for (my ($k, $v) = each %ENV) {
     is $demo->_env("foo \$$k bar"), "foo $v bar", "_env should replace \$$k";
 }
@@ -388,12 +389,14 @@ is $out, "diff -u file1.text file2.text\n\nbagel $gt ",
 ##############################################################################
 # Test decode_json_file.
 reset_output;
-is_deeply $demo->decode_json_file('t/resource.json'), {
+my $json_file = 't/resource.json';
+is_deeply $demo->decode_json_file($json_file), {
   identifier => Math::BigInt->new("113059749145936325402354257176981405696"),
   number     => 9999,
   active     => JSON::PP::true,
   username   => "chrissy",
   name       => "Chrisjen Avasarala",
+  emoji      => "🥻",
 }, 'Should have read JSON from file';
 
 # Test decode_json_file failure.
@@ -533,7 +536,171 @@ is_deeply $demo->handle($response, HTTP_OK, 1), {id => 42},
     'Should get decoded JSON response';
 is $out, '', 'Should have no output';
 
+##############################################################################
+# Test _data.
+is Theory::Demo::_data "It’s 😀", encode_utf8
+    "It’s 😀", '_data should encode data';
 
+is Theory::Demo::_data "\@$json_file", do {
+    open my $fh, '<:raw', $json_file or die "Cannot open $json_file: $!";
+    join '', <$fh>
+}, '_data should encode data';
+
+throws_ok { Theory::Demo::_data '@nonesuch.json' }
+    qr/Cannot open nonesuch\.json: /,
+    'Should get error from _data for nonexistent file';
+
+##############################################################################
+# Mock handle.
+my @handle_args;
+my $handle_ret;
+$module->mock(handle => sub { shift; @handle_args = @_; $handle_ret });
+
+##############################################################################
+# Test get.
+reset_output;
+$res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
+$curl->setup(response => $res);
+is $demo->get("/some/path"), undef, 'Should get undef from get';
+is_deeply \@handle_args, [
+    $demo->request(GET => $demo->_url("/some/path")), HTTP_OK,
+], 'Should have passed request and default code to handle';
+is $out, "GET https://hi//some/path\n", 'Should have output the GET request';
+
+# Test get with status code.
+reset_output;
+$res = HTTP::Response->new(HTTP_ACCEPTED, 'ACCEPTED', [], '{"id": 1234}');
+$curl->setup(response => $res);
+is $demo->get("/some/path", HTTP_ACCEPTED), undef, 'Should get undef from get';
+is_deeply \@handle_args, [
+    $demo->request(GET => $demo->_url("/some/path")), HTTP_ACCEPTED,
+], 'Should have passed request and code to handle';
+is $out, "GET https://hi//some/path\n", 'Should have output the GET request';
+
+# Test get_quiet
+reset_output;
+$res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
+$curl->setup(response => $res);
+is $demo->get_quiet("/some/path"), undef, 'Should get undef from get_quiet';
+is_deeply \@handle_args, [
+    $demo->request(GET => $demo->_url("/some/path")), HTTP_OK, 1,
+], 'Should have passed request and default code to handle';
+is $out, "", 'Should not have output the GET request';
+
+# Test get_quiet with status code.
+reset_output;
+$res = HTTP::Response->new(HTTP_ACCEPTED, 'ACCEPTED', [], '{"id": 1234}');
+$curl->setup(response => $res);
+is $demo->get_quiet("/some/path", HTTP_ACCEPTED), undef,
+    'Should get undef from get_quiet';
+is_deeply \@handle_args, [
+    $demo->request(GET => $demo->_url("/some/path")), HTTP_ACCEPTED, 1,
+], 'Should have passed request and code to handle';
+is $out, "", 'Should have no output the GET request';
+
+##############################################################################
+# Test del.
+reset_output;
+$res = HTTP::Response->new(HTTP_NO_CONTENT, 'No Content', [], '{"id": 1234}');
+$curl->setup(response => $res);
+is $demo->del("/some/path"), undef, 'Should del undef from del';
+is_deeply \@handle_args, [
+    $demo->request(DELETE => $demo->_url("/some/path")), HTTP_NO_CONTENT,
+], 'Should have passed request and default code to handle';
+is $out, "DELETE https://hi//some/path\n", 'Should have output the DELETE request';
+
+# Test del with status code.
+reset_output;
+$res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
+$curl->setup(response => $res);
+is $demo->del("/some/path", HTTP_OK), undef, 'Should del undef from del';
+is_deeply \@handle_args, [
+    $demo->request(DELETE => $demo->_url("/some/path")), HTTP_OK,
+], 'Should have passed request and code to handle';
+is $out, "DELETE https://hi//some/path\n", 'Should have output the DELETE request';
+
+##############################################################################
+# Test post, put, patch, and query.
+my $path = "/some/path";
+my $url = $demo->_url($path);
+for my $tc (
+    {
+        meth => 'post',
+        action => 'POST',
+        body => '{"id": 1234}',
+        code => HTTP_ACCEPTED,
+    },
+    {
+        meth => 'post',
+        action => 'POST',
+        body => "\@$json_file",
+        exp => HTTP_CREATED,
+    },
+    {
+        meth => 'put',
+        action => 'PUT',
+        body => '{"id": 1234}',
+        code => HTTP_ACCEPTED,
+    },
+    {
+        meth => 'put',
+        action => 'PUT',
+        body => "\@$json_file",
+        exp => HTTP_OK,
+    },
+    {
+        meth => 'patch',
+        action => 'PATCH',
+        body => '{"id": 1234}',
+        code => HTTP_ACCEPTED,
+    },
+    {
+        meth => 'patch',
+        action => 'PATCH',
+        body => "\@$json_file",
+        exp => HTTP_OK,
+    },
+    {
+        meth => 'query',
+        action => 'QUERY',
+        body => '{"id": 1234}',
+        code => HTTP_ACCEPTED,
+    },
+    {
+        meth => 'query',
+        action => 'QUERY',
+        body => "\@$json_file",
+        exp => HTTP_OK,
+    },
+) {
+    reset_output;
+    my $res = HTTP::Response->new(
+        $tc->{code}, HTTP::Status::status_message($tc->{code} || $tc->{exp}),
+        [], $tc->{body},
+    );
+    $curl->setup(response => $res);
+    ok my $meth = $demo->can($tc->{meth}), "can($tc->{meth})";
+    is $demo->$meth($path, $tc->{code}, $tc->{body}), undef,
+        "Should undef from $tc->{meth}";
+    my $data = encode_utf8 Theory::Demo::_data($tc->{body});
+    is_deeply \@handle_args, [
+        $demo->request($tc->{meth}, $url, $data), $tc->{exp} || $tc->{code},
+    ], 'Should have passed request and default code to handle';
+    is $out, "$tc->{action} $url $data\n",
+        "Should have output the $tc->{action} request";
+}
+
+##############################################################################
+# Test tail_docker_log.
+reset_output;
+$demo->tail_docker_log('sushi');
+is $out, "docker logs -n 4 'sushi'\n\nbagel $gt ",
+    'Should have emitted logs -n 4';
+
+reset_output;
+$demo->tail_docker_log('👋🏻 howdy', 8);
+is $out, "docker logs -n 8 '" . encode_utf8('👋🏻') . " howdy'\n\nbagel $gt ",
+    'Should have emitted encoded logs -n 8';
 
 ##############################################################################
 # Finish up.

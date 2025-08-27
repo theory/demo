@@ -9,6 +9,7 @@ use Crypt::Misc qw(decode_b58b);
 use Encode qw(encode_utf8 decode_utf8);
 use File::Temp;
 use Getopt::Long;
+use HTTP::Status qw(HTTP_OK HTTP_CREATED HTTP_NO_CONTENT);
 use IO::Socket::SSL;
 use IPC::System::Simple 1.17 qw(capturex run runx capture);
 use JSON::PP ();
@@ -280,8 +281,8 @@ sub clear_now {
 
 =head3 C<setenv>
 
-Sets an environment variable to a value, after which the variables can be
-used in arguments to the following functions where they will be emitted as a
+Sets an environment variable to a value, after which the variables can be used
+in arguments to the following functions where they will be emitted as a
 variable but the variable will be replaced before execution. System variables
 are included by default so can just be used. Variables used in the value
 passed to C<setenv> will be interpolated.
@@ -439,7 +440,7 @@ sub type_run_yq {
 
 =head C<diff>
 
-Diffs two files. Requires C<--color>. On macOS, `brew install diffutils`.
+Diffs two files. Requires C<--color>. On macOS, C<brew install diffutils>.
 
 =cut
 
@@ -452,9 +453,9 @@ sub diff {
 
 =head C<decode_json_file>
 
-Decodes the contents of a file into JSON and returns the resulting Perl
-value. Decodes large numbers into L<Math::BigInt> or L<Math::BigFloat>
-values, as appropriate.
+Decodes the contents of a file into JSON and returns the resulting Perl value.
+Decodes large numbers into L<Math::BigInt> or L<Math::BigFloat> values, as
+appropriate.
 
 =cut
 
@@ -467,8 +468,8 @@ sub decode_json_file {
 
 =head C<type_run_psql_query>
 
-Emits C<psql -tXxc "$query">, executes it, then calls C<nl_prompt>. The
-query may be multiple lines and must not contain double quotes.
+Emits C<psql -tXxc "$query">, executes it, then calls C<nl_prompt>. The query
+may be multiple lines and must not contain double quotes.
 
 Prints a single line if there is only one line passed and it's less than 72
 characters long. Otherwise prints the query on multiple lines; consider
@@ -487,7 +488,12 @@ sub type_run_psql {
     $self->nl_prompt;
 }
 
-# Decodes a base58-encoded UUID to its canonical string representation.
+=head3 C<b58_uuid>
+
+Decodes a base58-encoded UUID to its canonical string representation.
+
+=cut
+
 sub b58_uuid {
     shift;
     my $bytes = decode_b58b shift;
@@ -498,12 +504,13 @@ sub b58_uuid {
        ( 4, 2, 2, 2, 6 );
 }
 
-# Decodes a base58-encoded big-endian uint64 to a Math::BigInt.
-sub b58_int { Math::BigInt->from_bytes(decode_b58b $_[1]) }
+=head3 C<b58_int>
 
-sub key_prefix {
-    '01' . unpack("H8", pack("N1", $_[1]));
-}
+Decodes a base58-encoded big-endian integer to a Math::BigInt.
+
+=cut
+
+sub b58_int { Math::BigInt->from_bytes(decode_b58b $_[1]) }
 
 =head3 handle
 
@@ -553,6 +560,14 @@ sub handle {
     return $ret;
 }
 
+=head C<request>
+
+Creates and returns an L<HTTP::Request> for the given method, URL, and
+optional body. The body should be a Perl string which will be encoded as
+UTF-8. The request will contain the list of headers passed to C<new()>.
+
+=cut
+
 sub request {
     my ($self, $method, $url, $body) = @_;
     my $req = HTTP::Request->new($method, $url, $self->{head});
@@ -560,97 +575,157 @@ sub request {
     $self->{curl}->request($req);
 }
 
+# Encode the data for a request. If the argument starts with "@", C<_data>
+# assumes it's a file path and reads and returns its raw bytes. Otherwise, 
+# it encodes and returns the argument as UTF-8 bytes.
 sub _data($) {
     my $data = shift;
     return encode_utf8 $data unless $data =~ s/^@//;
     open my $fh, '<:raw', $data or die "Cannot open $data: $!\n";
-    return join '', <$fh>;
+    local $/ = undef;
+    return <$fh>;
 }
+
+=head C<get>
+
+Creates and types out a "GET $url" line relative to the C<base_url> passed to
+C<new()>, then uses the HTTP client created by C<new()> to make an HTTP C<GET>
+request and passes the response and expected status to C<handle>. The expected
+status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
+
+=cut
+
+sub get {
+    my ($self, $path, $expect_status) = @_;
+    $self->_req(GET => $path, $expect_status || HTTP_OK);
+}
+
+=head C<get_quiet>
+
+Like L<C<get>> but does not type out the "GET $url" line.
+
+=cut
 
 sub get_quiet {
     my ($self, $path, $expect_status) = @_;
-    my $url = URI->new($self->{base_url} . '/' . $self->_env($path));
     $self->handle(
-        $self->request(GET => $url),
-        $expect_status || 200, # OK
+        $self->request(GET => $self->_url($path)),
+        $expect_status || HTTP_OK,
         1,
     );
 }
 
-sub get {
-    my ($self, $path, $expect_status) = @_;
-    my $url = $self->_type_url('GET', $path);
-    $self->handle(
-        $self->request(GET => $url),
-        $expect_status || 200, # OK
-    );
-}
+=head C<del>
 
-sub del {
-    my ($self, $path, $expect_status) = @_;
-    my $url = $self->_type_url('DELETE', $path);
-    $self->handle(
-        $self->request(DELETE => $url),
-        $expect_status || 204, # NO CONTENT
-    );
-}
-
-sub post {
-    my ($self, $path, $data, $expect_status) = @_;
-    my $url = $self->_type_url('POST', $path, $data);
-    $self->handle(
-        $self->request(POST => $url, _data $data),
-        $expect_status || 201, # NO CONTENT
-    );
-}
-
-sub put {
-    my ($self, $path, $data, $expect_status) = @_;
-    my $url = $self->_type_url('PUT', $path, $data);
-    $self->handle(
-        $self->request(PUT => $url, _data $data),
-        $expect_status || 200, # OK
-    );
-}
-
-sub patch {
-    my ($self, $path, $data, $expect_status) = @_;
-    my $url = $self->_type_url('PATCH', $path, $data);
-    $self->handle(
-        $self->request(PUT => $url, _data $data),
-        $expect_status || 200, # OK
-    );
-}
-
-sub query {
-    my ($self, $path, $data, $expect_status) = @_;
-    my $url = $self->_type_url('QUERY', $path, $data);
-    $self->handle(
-        $self->request(QUERY => $url, _data $data),
-        $expect_status || 200, # OK
-    );
-}
-
-sub _type_url {
-    my ($self, $method, $path, $data) = @_;
-    $self->type(
-        $method, "$self->{base_url}/$path",
-        (defined $data ? ($data) : ()),
-    );
-    return URI->new($self->{base_url} . '/' . $self->_env($path));
-}
-
-=head3 C<tail_log>
-
-Prints the last four lines of the log from the Docker container passed to it,
-then displays a prompt.
+Creates and types out a C<DELETE $url> line relative to the C<base_url> passed
+to C<new()>, then uses the HTTP client created by C<new()> to make an HTTP
+C<GET> request and passes the response and expected status to C<handle>. The
+expected status defaults to L<HTTP::Status::HTTP_NO_CONTENT> (C<204>).
 
 =cut
 
-sub tail_log {
+sub del {
+    my ($self, $path, $expect_status) = @_;
+    $self->_req('DELETE', $path, $expect_status || HTTP_NO_CONTENT);
+}
+
+=head C<post>
+
+Creates and types out a C<POST $url> line relative to the C<base_url> passed
+to C<new()>, then uses the HTTP client created by C<new()> to make an HTTP
+C<POST> request and passes the response and expected status to C<handle>. The
+expected status defaults to L<HTTP::Status::HTTP_CREATED> (C<201>).
+
+=cut
+
+sub post {
+    my ($self, $path, $expect_status, $data) = @_;
+    $self->_req('POST', $path, $expect_status || HTTP_CREATED, _data $data);
+}
+
+=head C<put>
+
+Creates and types out a C<PUT $url> line relative to the C<base_url> passed
+to C<new()>, then uses the HTTP client created by C<new()> to make an HTTP
+C<PUT> request and passes the response and expected status to C<handle>. The
+expected status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
+
+=cut
+
+sub put {
+    my ($self, $path, $expect_status, $data) = @_;
+    $self->_req('PUT', $path, $expect_status || HTTP_OK, _data $data);
+}
+
+=head C<patch>
+
+Creates and types out a C<PATCH $url> line relative to the C<base_url> passed
+to C<new()>, then uses the HTTP client created by C<new()> to make an HTTP
+C<PATCH> request and passes the response and expected status to C<handle>. The
+expected status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
+
+=cut
+
+sub patch {
+    my ($self, $path, $expect_status, $data) = @_;
+    $self->_req('PATCH', $path, $expect_status || HTTP_OK, _data $data);
+}
+
+=head C<patch>
+
+Creates and types out a C<QUERY $url> line relative to the C<base_url> passed
+to C<new()>, then uses the HTTP client created by C<new()> to make an
+L<HTTP C<QUERY>|https://datatracker.ietf.org/doc/draft-ietf-httpbis-safe-method-w-body/>
+request and passes the response and expected status to C<handle>. The expected
+status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
+
+=cut
+
+sub query {
+    my ($self, $path, $expect_status, $data) = @_;
+    $self->_req('QUERY', $path, $expect_status || HTTP_OK, _data $data);
+}
+
+# Creates and types out a C<$meth $url> line relative to the C<base_url>
+# passed to C<new()>, then uses the HTTP client created by C<new()> to make a
+# request and passes the response and expected status to C<handle>.
+sub _req {
+    my ($self, $meth, $path, $expect_status, $data) = @_;
+    my $url = $self->_type_url($meth, $path, $data);
+    $self->handle($self->request($meth => $url), $expect_status);
+}
+
+# Creates and returns a L<URI> concatenating the C<base_url> passed to
+# C<new()> with C<$path>, replacing environment variables in C<$path>.
+sub _url {
+    my ($self, $path) = @_;
+    return URI->new($self->{base_url} . '/' . $self->_env($path));
+}
+
+# Type C<$method $self->{base_url}/$path> followed by `$data` if it's defined
+# Then creates and returns a L<URI> concatenating the C<base_url> passed to
+# C<new()> with C<$path>, replacing environment variables in C<$path>.
+sub _type_url {
+    my ($self, $method, $path, $data) = @_;
+    $self->type(
+        $method, " $self->{base_url}/$path",
+        (defined $data ? (' ', $data) : ()),
+    );
+    return $self->_url($path)
+}
+
+=head3 C<>
+
+Prints the last C<$num_lines> (defaults to 4) lines of the log from the Docker
+C<$container, then displays a prompt. C<$container> must contain no quotation
+marks.
+
+=cut
+
+sub tail_docker_log {
     my ($self, $container, $num_lines) = @_;
     $num_lines ||= 4;
-    $self->type_run("docker logs -n $num_lines $container");
+    $self->type_run("docker logs -n $num_lines '$container'");
     $self->nl_prompt;
 }
 
