@@ -19,6 +19,8 @@ use Term::TermKey;
 use URI;
 use WWW::Curl::Simple;
 
+my $json = JSON::PP->new->utf8->allow_bignum;
+
 =head1 Interface
 
 =head2 Constructor
@@ -53,6 +55,11 @@ File handle from which to read input. Defaults to C<STDIN>.
 
 File handle to which to send output. Defaults to C<STDOUT>.
 
+=item C<headers>
+
+List of headers to print when emitting an HTTP response. Defaults to
+C<['Location']>.
+
 =back
 
 =cut
@@ -76,6 +83,9 @@ sub new {
     if (my $u = delete $params{user}) {
         $params{head}->authorization_basic($u);
     }
+
+    # Configure response headers to print.
+    $params{headers} ||= ['Location'];
 
     # Set up input and output file handles.
     $params{tk} = Term::TermKey->new(delete $params{input} || \*STDIN);
@@ -114,7 +124,7 @@ Prints values to the output file handle.
 
 sub emit {
     my $self = shift;
-    print { $self ->{out} } @_;
+    print { $self->{out} } @_;
 }
 
 =head3 C<prompt>
@@ -195,14 +205,14 @@ sub type {
         }
 
         # Check for ANSI escape.
-        if ($c eq "\e") {
+        while ($c eq "\e") {
             # Print until the escape close character.
             while ($c ne "m") {
                 $self->emit($c = substr $str, ++$i, 1);
             }
 
             # Print the first char after, if there is one.
-            $self->emit(substr $str, ++$i, 1) if $i < length $str;
+            $self->emit($c = substr $str, ++$i, 1) if $i < length($str)-1;
         }
     }
 
@@ -452,7 +462,7 @@ sub decode_json_file {
     my $self = shift;
     my $path = $self->_env(shift);
     open my $fh, '<:raw', $path or die "Cannot open $path: $!\n";
-    return JSON::PP->new->utf8->allow_bignum->decode(join '', <$fh>);
+    return $json->decode(join '', <$fh>);
 }
 
 =head C<type_run_psql_query>
@@ -497,34 +507,48 @@ sub key_prefix {
 
 =head3 handle
 
-Handles an HTTP request, printing out the response body. Returns the decoded
-response if its type is JSON; otherwise returns C<undef>.
+Handles an HTTP response, printing the protocol and status code, headers
+configured by C<new()>, and the response body, followed by a newline and the
+prompt. For JSON responses, it passes the response body through C<yq> before
+printing it. Emits nothing if C<$quiet> is true. Returns the decoded response
+if its type is JSON; otherwise returns C<undef>. Dies if the response code
+does not match C<$expect_status>.
 
 =cut
 
 sub handle {
     my ($self, $res, $expect_status, $quiet) = @_;
-    die  $res->code . ': ' . $res->message . "\n\n" . $res->decoded_content . "\n"
-        unless $res->code == $expect_status;
+    die sprintf(
+        "Expected %d but got %d: %s\n\n%s\n",
+        $expect_status, $res->code, HTTP::Status::status_message($res->code),
+        $res->decoded_content,
+    ) unless $res->code == $expect_status;
 
     my $head = $res->headers;
     unless ($quiet) {
         $self->emit($res->protocol, " ", $res->code, "\n");
-        if (my $loc = $head->header('location')) {
-            $self->emit("Location: $loc\n");
+        for my $h (@{ $self->{headers} }) {
+            if (my $val = $head->header($h)) {
+                $self->emit("$h: $val\n");
+            }
         }
+        $self->emit("\n");
     }
 
     my $body = $res->decoded_content;
     my $ret;
     if ($head->content_length && $head->content_type =~ m{^application/json\b}) {
-        $ret = decode_json $body;
+        $ret = $json->decode($body);
         return $ret if $quiet;
         _yq $body;
         $self->nl_prompt;
     } elsif (!$quiet) {
-        $self->emit($body) if $head->content_length;
-        $self->nl_prompt;
+        if ($head->content_length) {
+            $self->emit($body);
+            $self->nl_prompt;
+        } else {
+            $self->prompt;
+        }
     }
     return $ret;
 }
@@ -532,7 +556,7 @@ sub handle {
 sub request {
     my ($self, $method, $url, $body) = @_;
     my $req = HTTP::Request->new($method, $url, $self->{head});
-    $req->add_content_utf8($body);
+    $req->add_content_utf8($body) if defined $body;
     $self->{curl}->request($req);
 }
 

@@ -19,11 +19,15 @@ apt-install-deps:
 	apt-get install -y --no-install-recommends \
       ca-certificates \
       libcryptx-perl \
+      libdevel-cover-perl \
       libio-socket-ssl-perl \
       libipc-system-simple-perl \
       libterm-termkey-perl \
-      liburi-perl \
-      libwww-curl-simple-perl \
+      libtest-exception-perl \
       libtest-file-contents-perl \
       libtest-mockmodule-perl \
+      libtest-nowarnings-perl \
+      liburi-perl \
+      libwww-curl-simple-perl \
+      make \
       postgresql-client

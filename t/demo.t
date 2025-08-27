@@ -5,9 +5,12 @@ use strict;
 use warnings;
 use utf8;
 use Encode qw(encode_utf8);
+use HTTP::Status qw(:constants);
 use Test::More 'no_plan';
 use Test::MockModule;
 use Test::File::Contents;
+use Test::Exception;
+use Test::NoWarnings qw(had_no_warnings);
 
 BEGIN {
     delete $ENV{PERSON};
@@ -30,17 +33,20 @@ sub reset_output {
     $output->seek(0, 0);
 }
 
+##############################################################################
 # Test just input param.
 ok my $demo = Theory::Demo->new(input => $input),
      'Should create demo with just input param';
 is_deeply $demo->{curl}, WWW::Curl::Simple->new, 'Should have curl client';
 is_deeply $demo->{head}, HTTP::Headers->new, 'Should have empty headers';
+is_deeply $demo->{headers}, ['Location'], 'Should have default emit headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'demo', 'Should have default prompt';
 is $demo->{out}, \*STDOUT, 'Should point to STDOUT';
 is_deeply $demo->{env}, {%ENV}, 'Should have copied %ENV';
 
 # Test all params.
+$ENV{TMPDIR} = '/tmp/';
 $ENV{HARPO_TEST_VAL} = 'gargantuan';
 ok $demo = Theory::Demo->new(
     prompt    => 'bagel',
@@ -49,6 +55,7 @@ ok $demo = Theory::Demo->new(
     user      => 'peggy',
     input     => $input,
     output    => $output,
+    headers   => [qw(Location Link)],
 ), 'Should create demo with all params';
 
 is_deeply $demo->{curl}, WWW::Curl::Simple->new(
@@ -59,11 +66,14 @@ is_deeply $demo->{curl}, WWW::Curl::Simple->new(
 my $head = HTTP::Headers->new;
 $head->authorization_basic('peggy');
 is_deeply $head, $demo->{head}, , 'Should have configured headers';
+is_deeply $demo->{headers}, [qw(Location Link)], 'Should have passed headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'bagel', 'Should have specified prompt';
 is $demo->{out}, $output, 'Should point to output file handle';
-is_deeply $demo->{env}, {%ENV}, 'Should have copied %ENV';
+is_deeply $demo->{env}, {%ENV, TMPDIR => '/tmp'},
+    'Should have copied %ENV and stripped the trailing slash from TMPDIR';
 
+##############################################################################
 # Test b58_uuid.
 is $demo->b58_uuid('NpAkRPsPPhzrRWWKPJgi5V'),
     'b0a5e079-b36a-47be-924b-367e4a230bb0',
@@ -82,6 +92,7 @@ is $demo->b58_int('jpXCZedGfVQ'), Math::BigInt->new(18446744073709551615),
 is $demo->b58_int('11111111'), Math::BigInt->new(0),
     "Should parse 0 from 11111111";
 
+##############################################################################
 # Test bold
 is Term::ANSIColor::colored([qw(bold bright_yellow)], "hi", "there"),
     $demo->bold("hi", "there"), "Should get bold bright yellow from bold()";
@@ -117,6 +128,7 @@ $demo->nl_prompt;
 is $out, "bagel $gt \nbagel $gt ",
     'Should have output newline and prompt';
 
+##############################################################################
 # Test wait_for_enter.
 reset_output;
 $demo->{tk} = MockTermKey->new(qw(a b 8 9 Enter));
@@ -159,7 +171,19 @@ reset_output;
 my $msg = 'It’s ' . $demo->bold('clobberin’');
 $demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
 $demo->type($msg);
-is $out, encode_utf8("$msg\n"), 'Should have typed with ';
+is $out, encode_utf8("$msg\n"), 'Should have typed with trailing ANSI escape';
+
+reset_output;
+$msg = 'It’s ' . $demo->bold('clobberin’') . ' time';
+$demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter', 'Enter');
+$demo->type($msg);
+is $out, encode_utf8("$msg\n"), 'Should have typed with middle ANSI escape';
+
+reset_output;
+$msg = 'It’s ' . $demo->bold('');
+$demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
+$demo->type($msg);
+is $out, encode_utf8("$msg\n"), 'Should have typed with empty ANSI escape';
 
 # Mock the type() method from here on.
 my $module = Test::MockModule->new('Theory::Demo');
@@ -179,6 +203,7 @@ $demo->comment("I like corn\nLike a lot\n", "You too?");
 my $exp = $demo->bold("# I like corn\n# Like a lot\n# You too?");
 is $out, "$exp\nbagel $gt ", 'Should have emitted comment';
 
+##############################################################################
 # Mock the IPC::System::Simple functions.
 my $ipc = MockSystem->new;
 $module->mock(run => sub { $ipc->run(@_) });
@@ -213,6 +238,7 @@ $demo->clear_now;
 is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
 is $out, "bagel $gt ", 'Should have output just the prompt';
 
+##############################################################################
 # Test setenv and env.
 for (my ($k, $v) = each %ENV) {
     is $demo->_env("foo \$$k bar"), "foo $v bar", "_env should replace \$$k";
@@ -224,6 +250,10 @@ is $demo->_env("foo \$PERSON bar"), "foo PERSON bar",
 is $demo->_env("foo \$FELINE bar"), "foo FELINE bar",
     "_env should replace \$FELINE with the variable name";
 
+# Test with no arg.
+is $demo->_env(undef), undef, 'Should get undef for undef arg to _env';
+is $demo->_env(""), "", 'Should get "" for "" arg to _env';
+
 # Add more variables.
 $demo->setenv(PERSON => 'theory');
 $demo->setenv(FELINE => 'bagel');
@@ -232,6 +262,7 @@ is $demo->_env("foo \$PERSON bar"), "foo theory bar",
 is $demo->_env("foo \$FELINE bar"), "foo bagel bar",
     "_env should replace \$FELINE with the variable value";
 
+##############################################################################
 # Test grab.
 reset_output;
 $ipc->setup(capturex_returns => ["some output\n"]);
@@ -246,6 +277,7 @@ is $demo->grab(qw(ls -ahl)), "some output\nand more output",
 is_deeply $ipc->args, {capturex => [[qw(ls -ahl)]]},
     'Should have executed command';
 
+##############################################################################
 # Test type_lines.
 reset_output;
 $demo->type_lines($lorum[0]);
@@ -298,6 +330,7 @@ is $out, "ls -lah\n",
 is_deeply $ipc->args, { run => [["ls -lah"]]},
     'Should have passed command to run';
 
+##############################################################################
 # Test _yq.
 reset_output;
 $ipc->setup(runx_callback => sub {
@@ -341,6 +374,7 @@ is_deeply $ipc->args, {
 }, 'Should have captured the command and called yq';
 is $out, "cat file.yaml\n", 'Should have echoed command then prompt';
 
+##############################################################################
 # Test diff.
 reset_output;
 $ipc->setup;
@@ -351,6 +385,7 @@ is_deeply $ipc->args, {
 is $out, "diff -u file1.text file2.text\n\nbagel $gt ",
     'Should have typed diff command then prompt';
 
+##############################################################################
 # Test decode_json_file.
 reset_output;
 is_deeply $demo->decode_json_file('t/resource.json'), {
@@ -361,6 +396,13 @@ is_deeply $demo->decode_json_file('t/resource.json'), {
   name       => "Chrisjen Avasarala",
 }, 'Should have read JSON from file';
 
+# Test decode_json_file failure.
+reset_output;
+throws_ok { $demo->decode_json_file('nonesuch.json') }
+    qr/^Cannot open nonesuch.json: /,
+    'Should get an error for nonexistent file.';
+
+##############################################################################
 # Test type_run_psql with a short query.
 reset_output;
 $ipc->setup;
@@ -397,6 +439,105 @@ is_deeply $ipc->args, {
     run => [[qq{psql -tXxc "} . join(' ', @sql) . qq{"}]],
 }, 'Should have run the multiline psql command';
 
+##############################################################################
+# Mock Curl and Test request method.
+my $curl = MockCurl->new(response => HTTP::Response->new(HTTP_OK, 'OK'));
+$demo->{curl} = $curl;
+
+# Test GET request.
+ok my $res = $demo->request("GET", "/widgets"), 'Make request';
+is_deeply $res, HTTP::Response->new(HTTP_OK, 'OK'), 'Should have 200 response';
+is_deeply $curl->{requested},
+    [[HTTP::Request->new("GET", "/widgets", $demo->{head})]],
+    'Should have made the expected request';
+
+# Test POST request with body.
+$curl->setup(response => HTTP::Response->new(HTTP_CREATED, 'Created'));
+ok $res = $demo->request("POST", "/widgets", 'some body'),
+    'Make POST request';
+is_deeply $res, HTTP::Response->new(HTTP_CREATED, 'Created'),
+    'Should have 201 response';
+is_deeply $curl->{requested},
+    [[HTTP::Request->new("POST", "/widgets", $demo->{head}, 'some body')]],
+    'Should have made the expected request';
+
+##############################################################################
+# Test handle().
+sub make_response {
+    my ($code, $head, $body) = @_;
+    my $msg = HTTP::Status::status_message($code);
+    my $res = HTTP::Response->new($code, $msg, $head, $body);
+    $res->header('Content-Length' => length $body);
+    $res->protocol('HTTP/2');
+    return $res;
+}
+
+reset_output;
+my $response = make_response(HTTP_OK, undef, '{"id": 42}');
+is $demo->handle($response, HTTP_OK), undef,
+    'Should get undef for simple response';
+is $out, qq{HTTP/2 200\n\n{"id": 42}\nbagel $gt }, 'Should have output';
+
+# Unexpected code.
+throws_ok { $demo->handle($response, HTTP_CREATED) }
+    qr/Expected 201 but got 200: OK\n\n\{"id": 42\}/,
+    'Should get exception for unexpected status code';
+
+# Print headers.
+reset_output;
+$demo->{headers} = [qw(Location Link)];
+$head = [
+    Location => '/foo/bar',
+    Link     => 'This is a link',
+    Creation => 'Now',
+];
+
+$response = make_response(HTTP_OK, $head, '{"id": 42}');
+is $demo->handle($response, HTTP_OK), undef,
+    'Should get undef for simple response';
+is $out,
+    qq{HTTP/2 200\nLocation: /foo/bar\nLink: This is a link\n\n{"id": 42}\nbagel $gt },
+    'Should have two desired headers in output';
+
+# Plain text quiet.
+reset_output;
+$response = make_response(HTTP_OK, $head, '{"id": 42}');
+is $demo->handle($response, HTTP_OK, 1), undef,
+    'Should get undef for simple response';
+is $out, '', 'Should have no output';
+
+# No content.
+reset_output;
+$response = make_response(HTTP_NO_CONTENT, $head);
+is $demo->handle($response, HTTP_NO_CONTENT), undef,
+    'Should get undef for simple response';
+is $out,
+    qq{HTTP/2 204\nLocation: /foo/bar\nLink: This is a link\n\nbagel $gt },
+    'Should have no body when no body';
+
+# JSON output.
+reset_output;
+push @{ $head }, 'Content-Type', 'application/json';
+$response = make_response(HTTP_OK, $head, '{"id": 42}');
+$module->mock(_yq => sub { $demo->emit("<yq>$_[0]</yq>\n")});
+my $json = qq{<yq>{"id": 42}</yq>\n};
+is_deeply $demo->handle($response, HTTP_OK), {id => 42},
+    'Should get decoded JSON response';
+is $out,
+    qq{HTTP/2 200\nLocation: /foo/bar\nLink: This is a link\n\n$json\nbagel $gt },
+    'Should have _yq-formatted JSON';
+
+# JSON quiet.
+reset_output;
+is_deeply $demo->handle($response, HTTP_OK, 1), {id => 42},
+    'Should get decoded JSON response';
+is $out, '', 'Should have no output';
+
+
+
+##############################################################################
+# Finish up.
+had_no_warnings;
 done_testing;
 
 MOCKS: {
@@ -499,4 +640,29 @@ MOCKS: {
         }
         return shift @{ $self->{capturex_returns} };
     }
+
+    package MockCurl;
+
+    sub new {
+        my $pkg = shift;
+        my $self = bless {} => $pkg;
+        $self->setup(@_);
+        return $self;
+    }
+
+    sub setup {
+        my $self = shift;
+        %{ $self } = (
+            response => undef,
+            requested => [],
+            @_
+        );
+    }
+
+    sub request {
+        my $self = shift;
+        push @{ $self->{requested} } => \@_;
+        return $self->{response};
+    }
+
 }
