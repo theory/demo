@@ -512,6 +512,20 @@ Decodes a base58-encoded big-endian integer to a Math::BigInt.
 
 sub b58_int { Math::BigInt->from_bytes(decode_b58b $_[1]) }
 
+=begin comment
+
+=head3 C<_content_is_json>
+
+# Return true if the HTTP::Headers passed indicates JSON content. Returns true
+# if the content type is C<"application/json"> or ends in C<"+json">.
+
+=cut
+
+sub _content_is_json {
+    my $ct = shift->content_type;
+    return $ct eq "application/json" || $ct =~ /[+]json$/;
+}
+
 =head3 handle
 
 Handles an HTTP response, printing the protocol and status code, headers
@@ -531,6 +545,7 @@ sub handle {
         $res->decoded_content,
     ) unless $res->code == $expect_status;
 
+    # Emit the protocol, status code and headers of interest.
     my $head = $res->headers;
     unless ($quiet) {
         $self->emit($res->protocol, " ", $res->code, "\n");
@@ -542,23 +557,29 @@ sub handle {
         $self->emit("\n");
     }
 
-    my $body = $res->decoded_content;
-    my $ret;
-    if ($head->content_length && $head->content_type =~ m{^application/json\b}) {
-        $ret = $json->decode($body);
-        return $ret if $quiet;
-        _yq $body;
-        $self->nl_prompt;
-    } elsif (!$quiet) {
-        if ($head->content_length) {
-            $self->emit($body);
-            $self->nl_prompt;
-        } else {
-            $self->prompt;
-        }
+    # Just prompt and return if there is no content.
+    unless ($head->content_length) {
+        $self->prompt unless $quiet;
+        return
     }
-    return $ret;
+
+    my $body = $res->decoded_content;
+    if (_content_is_json $head) {
+        # Print out the JSON content, then decode and return it.
+        unless ($quiet) {
+            _yq $body;
+            $self->nl_prompt;
+        }
+        return $json->decode($body);
+    }
+
+    # Emit the content.
+    unless ($quiet) {
+        $self->emit($body);
+        $self->nl_prompt;
+    }
 }
+
 
 =head C<request>
 

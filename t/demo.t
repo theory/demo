@@ -468,6 +468,18 @@ is_deeply $curl->{requested},
     'Should have made the expected request';
 
 ##############################################################################
+# Test _content_is_json.
+for my $ct (qw(application/json application/ld+json something/xyz+json)) {
+    my $head = HTTP::Headers->new('Content-Type' => $ct);
+    ok Theory::Demo::_content_is_json $head, "$ct is json";
+}
+
+for my $ct (qw(text/plain application/xml)) {
+    my $head = HTTP::Headers->new('Content-Type' => $ct);
+    ok !Theory::Demo::_content_is_json $head, "$ct is not json";
+}
+
+##############################################################################
 # Test handle().
 sub make_response {
     my ($code, $head, $body) = @_;
@@ -520,6 +532,13 @@ is $demo->handle($response, HTTP_NO_CONTENT), undef,
 is $out,
     qq{HTTP/2 204\nLocation: /foo/bar\nLink: This is a link\n\nbagel $gt },
     'Should have no body when no body';
+
+# No content quiet.
+reset_output;
+$response = make_response(HTTP_NO_CONTENT, $head);
+is $demo->handle($response, HTTP_NO_CONTENT, 1), undef,
+    'Should get undef for simple response';
+is $out, '', 'Should have no output when quiet';
 
 # JSON output.
 reset_output;
