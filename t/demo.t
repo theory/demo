@@ -187,15 +187,15 @@ is $out, encode_utf8("$msg\n"), 'Should have typed with empty ANSI escape';
 
 # Mock the type() method from here on.
 my $module = Test::MockModule->new('Theory::Demo');
-$module->mock(type => sub { shift->emit(@_, "\n") });
+$module->mock(type => sub { shift->emit(join(' ', @_), "\n") });
 reset_output;
 $demo->type('howdy');
 is_deeply $out, "howdy\n", 'Should have swizzled type()';
 
 # Test echo.
 reset_output;
-$demo->echo("I like corn\n", "Like a lot");
-is $out, "I like corn\nLike a lot\nbagel $gt ", 'Should have echoed output';
+$demo->echo("I like corn", "Like a lot");
+is $out, "I like corn Like a lot\nbagel $gt ", 'Should have echoed output';
 
 # Test comment.
 reset_output;
@@ -686,7 +686,7 @@ for my $tc (
     is_deeply \@handle_args, [
         $demo->request($tc->{meth}, $url, $data), $tc->{exp} || $tc->{code},
     ], 'Should have passed request and default code to handle';
-    is $out, "$tc->{action} $url $data\n",
+    is $out, "$tc->{action} $url $tc->{body}\n",
         "Should have output the $tc->{action} request";
 }
 

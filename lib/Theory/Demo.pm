@@ -580,6 +580,7 @@ sub request {
 # it encodes and returns the argument as UTF-8 bytes.
 sub _data($) {
     my $data = shift;
+    return $data unless $data;
     return encode_utf8 $data unless $data =~ s/^@//;
     open my $fh, '<:raw', $data or die "Cannot open $data: $!\n";
     local $/ = undef;
@@ -640,7 +641,7 @@ expected status defaults to L<HTTP::Status::HTTP_CREATED> (C<201>).
 
 sub post {
     my ($self, $path, $data, $expect_status) = @_;
-    $self->_req('POST', $path, $expect_status || HTTP_CREATED, _data $data);
+    $self->_req('POST', $path, $expect_status || HTTP_CREATED, $data);
 }
 
 =head C<put>
@@ -654,7 +655,7 @@ expected status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
 
 sub put {
     my ($self, $path, $data, $expect_status) = @_;
-    $self->_req('PUT', $path, $expect_status || HTTP_OK, _data $data);
+    $self->_req('PUT', $path, $expect_status || HTTP_OK, $data);
 }
 
 =head C<patch>
@@ -668,7 +669,7 @@ expected status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
 
 sub patch {
     my ($self, $path, $data, $expect_status) = @_;
-    $self->_req('PATCH', $path, $expect_status || HTTP_OK, _data $data);
+    $self->_req('PATCH', $path, $expect_status || HTTP_OK, $data);
 }
 
 =head C<patch>
@@ -683,7 +684,7 @@ status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
 
 sub query {
     my ($self, $path, $data, $expect_status) = @_;
-    $self->_req('QUERY', $path, $expect_status || HTTP_OK, _data $data);
+    $self->_req('QUERY', $path, $expect_status || HTTP_OK, $data);
 }
 
 # Creates and types out a C<$meth $url> line relative to the C<base_url>
@@ -692,7 +693,7 @@ sub query {
 sub _req {
     my ($self, $meth, $path, $expect_status, $data) = @_;
     my $url = $self->_type_url($meth, $path, $data);
-    $self->handle($self->request($meth => $url), $expect_status);
+    $self->handle($self->request($meth => $url, _data $data), $expect_status);
 }
 
 # Creates and returns a L<URI> concatenating the C<base_url> passed to
@@ -708,8 +709,8 @@ sub _url {
 sub _type_url {
     my ($self, $method, $path, $data) = @_;
     $self->type(
-        $method, " $self->{base_url}/$path",
-        (defined $data ? (' ', $data) : ()),
+        $method, "$self->{base_url}/$path",
+        (defined $data ? ($data) : ()),
     );
     return $self->_url($path)
 }
