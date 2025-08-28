@@ -680,7 +680,7 @@ for my $tc (
     );
     $curl->setup(response => $res);
     ok my $meth = $demo->can($tc->{meth}), "can($tc->{meth})";
-    is $demo->$meth($path, $tc->{code}, $tc->{body}), undef,
+    is $demo->$meth($path, $tc->{body}, $tc->{code}), undef,
         "Should undef from $tc->{meth}";
     my $data = encode_utf8 Theory::Demo::_data($tc->{body});
     is_deeply \@handle_args, [

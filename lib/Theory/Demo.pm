@@ -639,7 +639,7 @@ expected status defaults to L<HTTP::Status::HTTP_CREATED> (C<201>).
 =cut
 
 sub post {
-    my ($self, $path, $expect_status, $data) = @_;
+    my ($self, $path, $data, $expect_status) = @_;
     $self->_req('POST', $path, $expect_status || HTTP_CREATED, _data $data);
 }
 
@@ -653,7 +653,7 @@ expected status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
 =cut
 
 sub put {
-    my ($self, $path, $expect_status, $data) = @_;
+    my ($self, $path, $data, $expect_status) = @_;
     $self->_req('PUT', $path, $expect_status || HTTP_OK, _data $data);
 }
 
@@ -667,7 +667,7 @@ expected status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
 =cut
 
 sub patch {
-    my ($self, $path, $expect_status, $data) = @_;
+    my ($self, $path, $data, $expect_status) = @_;
     $self->_req('PATCH', $path, $expect_status || HTTP_OK, _data $data);
 }
 
@@ -682,7 +682,7 @@ status defaults to L<HTTP::Status::HTTP_OK> (C<200>).
 =cut
 
 sub query {
-    my ($self, $path, $expect_status, $data) = @_;
+    my ($self, $path, $data, $expect_status) = @_;
     $self->_req('QUERY', $path, $expect_status || HTTP_OK, _data $data);
 }
 
