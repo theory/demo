@@ -334,11 +334,13 @@ is_deeply $ipc->args, { run => [["ls -lah"]]},
 ##############################################################################
 # Test _yq.
 reset_output;
+my $emoji = encode_utf8 "🥻";
 $ipc->setup(runx_callback => sub {
     my $fn = pop @{ $_[0] };
-    file_contents_eq $fn, 'some YAML', 'Should have written YAML to temp file';
+    file_contents_eq $fn, qq[{"emoji":"$emoji"}],
+        'Should have written JSON to temp file';
 });
-Theory::Demo::_yq("some YAML");
+Theory::Demo::_yq(qq[{"emoji":"$emoji"}]);
 is_deeply $ipc->args, {runx => [[qw(yq -oj)]]}, 'Should have called yq';
 
 # Test yq.
@@ -456,12 +458,13 @@ is_deeply $curl->{requested},
 
 # Test POST request with body.
 $curl->setup(response => HTTP::Response->new(HTTP_CREATED, 'Created'));
-ok $res = $demo->request("POST", "/widgets", 'some body'),
+my $body = encode_utf8 'some body 😀';
+ok $res = $demo->request("POST", "/widgets", $body),
     'Make POST request';
 is_deeply $res, HTTP::Response->new(HTTP_CREATED, 'Created'),
     'Should have 201 response';
 is_deeply $curl->{requested},
-    [[HTTP::Request->new("POST", "/widgets", $demo->{head}, 'some body')]],
+    [[HTTP::Request->new("POST", "/widgets", $demo->{head}, $body)]],
     'Should have made the expected request';
 
 ##############################################################################

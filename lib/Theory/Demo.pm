@@ -570,8 +570,7 @@ UTF-8. The request will contain the list of headers passed to C<new()>.
 
 sub request {
     my ($self, $method, $url, $body) = @_;
-    my $req = HTTP::Request->new($method, $url, $self->{head});
-    $req->add_content_utf8($body) if defined $body;
+    my $req = HTTP::Request->new($method, $url, $self->{head}, $body);
     $self->{curl}->request($req);
 }
 
