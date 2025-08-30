@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       httpbin:
-        image: mccutchen/go-httpbin
+        image: ghcr.io/mccutchen/go-httpbin
         ports: [8080:8080]
     steps:
       - name: Checkout Repo
