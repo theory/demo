@@ -10,6 +10,7 @@ use Test::More 'no_plan';
 use Test::MockModule;
 use Test::File::Contents;
 use Test::Exception;
+use HTTP::Response;
 use Test::NoWarnings qw(had_no_warnings);
 
 BEGIN {
@@ -37,7 +38,6 @@ sub reset_output {
 # Test just input param.
 ok my $demo = Theory::Demo->new(input => $input),
      'Should create demo with just input param';
-is_deeply $demo->{curl}, WWW::Curl::Simple->new, 'Should have curl client';
 is_deeply $demo->{head}, HTTP::Headers->new, 'Should have empty headers';
 is_deeply $demo->{headers}, ['Location'], 'Should have default emit headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
@@ -58,14 +58,10 @@ ok $demo = Theory::Demo->new(
     headers   => [qw(Location Link)],
 ), 'Should create demo with all params';
 
-is_deeply $demo->{curl}, WWW::Curl::Simple->new(
-    check_ssl_certs => 1,
-    ssl_cert_bundle => 'foo',
-), 'Should have configured curl client';
-
 my $head = HTTP::Headers->new;
 $head->authorization_basic('peggy');
-is_deeply $head, $demo->{head}, , 'Should have configured headers';
+is_deeply$demo->{head}, $head, 'Should have configured headers';
+is $demo->{ca_bundle}, 'foo', 'Should have passed ca_bundle';
 is_deeply $demo->{headers}, [qw(Location Link)], 'Should have passed headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'bagel', 'Should have specified prompt';
@@ -445,29 +441,6 @@ is_deeply $ipc->args, {
 }, 'Should have run the multiline psql command';
 
 ##############################################################################
-# Mock Curl and Test request method.
-my $curl = MockCurl->new(response => HTTP::Response->new(HTTP_OK, 'OK'));
-$demo->{curl} = $curl;
-
-# Test GET request.
-ok my $res = $demo->request("GET", "/widgets"), 'Make request';
-is_deeply $res, HTTP::Response->new(HTTP_OK, 'OK'), 'Should have 200 response';
-is_deeply $curl->{requested},
-    [[HTTP::Request->new("GET", "/widgets", $demo->{head})]],
-    'Should have made the expected request';
-
-# Test POST request with body.
-$curl->setup(response => HTTP::Response->new(HTTP_CREATED, 'Created'));
-my $body = encode_utf8 'some body 😀';
-ok $res = $demo->request("POST", "/widgets", $body),
-    'Make POST request';
-is_deeply $res, HTTP::Response->new(HTTP_CREATED, 'Created'),
-    'Should have 201 response';
-is_deeply $curl->{requested},
-    [[HTTP::Request->new("POST", "/widgets", $demo->{head}, $body)]],
-    'Should have made the expected request';
-
-##############################################################################
 # Test _content_is_json.
 for my $ct (qw(application/json application/ld+json something/xyz+json)) {
     my $head = HTTP::Headers->new('Content-Type' => $ct);
@@ -573,26 +546,41 @@ throws_ok { Theory::Demo::_data '@nonesuch.json' }
     'Should get error from _data for nonexistent file';
 
 ##############################################################################
-# Mock handle.
+# Test _curl.
+my ($curl, $head_ref, $body_ref) = $demo->_curl(GET => '/get');
+isa_ok $curl, 'WWW::Curl::Easy';
+isa_ok $head_ref, 'SCALAR';
+isa_ok $body_ref, 'SCALAR';
+
+delete $demo->{ca_bundle};
+($curl, $head_ref, $body_ref) = $demo->_curl(POST => '/get', 'content');
+isa_ok $curl, 'WWW::Curl::Easy';
+isa_ok $head_ref, 'SCALAR';
+isa_ok $body_ref, 'SCALAR';
+
+##############################################################################
+# Mock handle and _curl.
 my @handle_args;
 my $handle_ret;
 $module->mock(handle => sub { shift; @handle_args = @_; $handle_ret });
+$curl = MockCurl->new;
+my ($res_head, $res_body) =  ('HTTP/2 200', '{"id": 1234}');
+$module->mock(_curl => sub { return $curl, \$res_head, \$res_body });
 
 ##############################################################################
 # Test get.
 reset_output;
-$res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
-$curl->setup(response => $res);
+my $res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
 is $demo->get("/some/path"), undef, 'Should get undef from get';
 is_deeply \@handle_args, [
     $demo->request(GET => $demo->_url("/some/path")), HTTP_OK,
 ], 'Should have passed request and default code to handle';
-is $out, "GET https://hi//some/path\n", 'Should have output the GET request';
+is $out, "GET https://hi//some/path\n",
+    'Should have output the GET request';
 
 # Test get with status code.
 reset_output;
 $res = HTTP::Response->new(HTTP_ACCEPTED, 'ACCEPTED', [], '{"id": 1234}');
-$curl->setup(response => $res);
 is $demo->get("/some/path", HTTP_ACCEPTED), undef, 'Should get undef from get';
 is_deeply \@handle_args, [
     $demo->request(GET => $demo->_url("/some/path")), HTTP_ACCEPTED,
@@ -602,7 +590,6 @@ is $out, "GET https://hi//some/path\n", 'Should have output the GET request';
 # Test get_quiet
 reset_output;
 $res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
-$curl->setup(response => $res);
 is $demo->get_quiet("/some/path"), undef, 'Should get undef from get_quiet';
 is_deeply \@handle_args, [
     $demo->request(GET => $demo->_url("/some/path")), HTTP_OK, 1,
@@ -612,7 +599,6 @@ is $out, "", 'Should not have output the GET request';
 # Test get_quiet with status code.
 reset_output;
 $res = HTTP::Response->new(HTTP_ACCEPTED, 'ACCEPTED', [], '{"id": 1234}');
-$curl->setup(response => $res);
 is $demo->get_quiet("/some/path", HTTP_ACCEPTED), undef,
     'Should get undef from get_quiet';
 is_deeply \@handle_args, [
@@ -624,7 +610,6 @@ is $out, "", 'Should have no output the GET request';
 # Test del.
 reset_output;
 $res = HTTP::Response->new(HTTP_NO_CONTENT, 'No Content', [], '{"id": 1234}');
-$curl->setup(response => $res);
 is $demo->del("/some/path"), undef, 'Should del undef from del';
 is_deeply \@handle_args, [
     $demo->request(DELETE => $demo->_url("/some/path")), HTTP_NO_CONTENT,
@@ -634,7 +619,6 @@ is $out, "DELETE https://hi//some/path\n", 'Should have output the DELETE reques
 # Test del with status code.
 reset_output;
 $res = HTTP::Response->new(HTTP_OK, 'OK', [], '{"id": 1234}');
-$curl->setup(response => $res);
 is $demo->del("/some/path", HTTP_OK), undef, 'Should del undef from del';
 is_deeply \@handle_args, [
     $demo->request(DELETE => $demo->_url("/some/path")), HTTP_OK,
@@ -649,7 +633,7 @@ for my $tc (
     {
         meth => 'post',
         action => 'POST',
-        body => '{"id": 1234}',
+        body => '{"id": 1234, "name": "🐥"}',
         code => HTTP_ACCEPTED,
     },
     {
@@ -696,21 +680,21 @@ for my $tc (
     },
 ) {
     reset_output;
-    my $res = HTTP::Response->new(
-        $tc->{code}, HTTP::Status::status_message($tc->{code} || $tc->{exp}),
-        [], $tc->{body},
-    );
-    $curl->setup(response => $res);
     ok my $meth = $demo->can($tc->{meth}), "can($tc->{meth})";
     is $demo->$meth($path, $tc->{body}, $tc->{code}), undef,
         "Should undef from $tc->{meth}";
-    my $data = encode_utf8 Theory::Demo::_data($tc->{body});
+    my $data = Theory::Demo::_data $tc->{body};
     is_deeply \@handle_args, [
-        $demo->request($tc->{meth}, $url, $data), $tc->{exp} || $tc->{code},
+        $demo->request($tc->{action}, $url, $data), $tc->{exp} || $tc->{code},
     ], 'Should have passed request and default code to handle';
-    is $out, "$tc->{action} $url $tc->{body}\n",
+    is $out, "$tc->{action} $url " . encode_utf8 "$tc->{body}\n",
         "Should have output the $tc->{action} request";
 }
+
+# Test request when curl returns an error.
+$curl->setup(perform => 42, strerror => 'Oops');
+throws_ok { $demo->request(GET => '/') } qr/Request failed: Oops \(42\)/,
+    'request should die when curl returns an error';
 
 ##############################################################################
 # Test tail_docker_log.
@@ -842,16 +826,13 @@ MOCKS: {
     sub setup {
         my $self = shift;
         %{ $self } = (
-            response => undef,
-            requested => [],
+            perform => undef,
+            strerror => 'some error',
             @_
         );
     }
 
-    sub request {
-        my $self = shift;
-        push @{ $self->{requested} } => \@_;
-        return $self->{response};
-    }
+    sub perform  { shift->{perform} }
+    sub strerror { shift->{strerror} }
 
 }

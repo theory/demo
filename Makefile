@@ -37,7 +37,7 @@ deb-install-deps:
       libtest-mockmodule-perl \
       libtest-nowarnings-perl \
       liburi-perl \
-      libwww-curl-simple-perl \
+      libwww-curl-perl \
       libyaml-perl \
       make \
       postgresql-client

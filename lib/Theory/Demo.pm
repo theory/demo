@@ -9,6 +9,9 @@ use Crypt::Misc qw(decode_b58b);
 use Encode qw(encode_utf8 decode_utf8);
 use File::Temp;
 use Getopt::Long;
+use HTTP::Headers;
+use HTTP::Request;
+use HTTP::Response;
 use HTTP::Status qw(HTTP_OK HTTP_CREATED HTTP_NO_CONTENT);
 use IO::Socket::SSL;
 use IPC::System::Simple 1.17 qw(capturex run runx capture);
@@ -18,7 +21,9 @@ use Net::SSLeay;
 use Term::ANSIColor ();
 use Term::TermKey;
 use URI;
-use WWW::Curl::Simple;
+use WWW::Curl::Easy;
+
+our $VERSION = v0.1.0;
 
 my $json = JSON::PP->new->utf8->allow_bignum;
 
@@ -67,16 +72,6 @@ C<['Location']>.
 
 sub new {
     my ($pkg, %params) = @_;
-    # Set up Curl.
-    if ($params{ca_bundle}) {
-        $params{curl} = WWW::Curl::Simple->new(
-            check_ssl_certs => 1,
-            ssl_cert_bundle => delete $params{ca_bundle},
-        );
-    } else {
-        $params{curl} = WWW::Curl::Simple->new;
-    }
-
     # Configure request headers.
     $params{head} = HTTP::Headers->new(
         #'Content-Type'  => 'application/json',
@@ -521,7 +516,7 @@ sub b58_int { Math::BigInt->from_bytes(decode_b58b $_[1]) }
 
 =cut
 
-sub _content_is_json {
+sub _content_is_json($) {
     my $ct = shift->content_type;
     return $ct eq "application/json" || $ct =~ /[+]json$/;
 }
@@ -578,21 +573,85 @@ sub handle {
         $self->emit($body);
         $self->nl_prompt;
     }
+
+    return
 }
 
 
 =head C<request>
 
-Creates and returns an L<HTTP::Request> for the given method, URL, and
-optional body. The body should be a Perl string which will be encoded as
+Makes a request for the given method, URL, and optional body and returns an
+L<HTTP::Response>. The body should be a Perl string which will be encoded as
 UTF-8. The request will contain the list of headers passed to C<new()>.
 
 =cut
 
 sub request {
     my ($self, $method, $url, $body) = @_;
-    my $req = HTTP::Request->new($method, $url, $self->{head}, $body);
-    $self->{curl}->request($req);
+    my ($curl, $head, $content) = $self->_curl($method, $url, $body);
+    if (my $code = $curl->perform) {
+        die "Request failed: " . $curl->strerror($code) . " ($code)\n";
+    }
+
+    # Create and return the response.
+    my $res = HTTP::Response->parse(${ $head });
+    $res->request(HTTP::Request->new($method, $url, $self->{head}, $body));
+    $res->content(${ $content });
+    return $res;
+}
+
+=begin comment
+
+=head3 C<_curl>
+
+Creates a L<WWW::Curl> object (specifically, C<WWW::Curl::Easy) to request
+C<$method>, C<$url>, and C<$body> and configured to write the response to
+C<$head> and C<$content>, which must be scalar references.
+
+=cut
+
+sub _curl {
+    my ($self, $method, $url, $body) = @_;
+    # Setup the request.
+    my $curl = WWW::Curl::Easy->new;
+    $curl->setopt(CURLOPT_NOPROGRESS, 1);
+    $curl->setopt(CURLOPT_USERAGENT, __PACKAGE__ . '/' . $self->VERSION);
+    $curl->setopt(CURLOPT_CUSTOMREQUEST, $method);
+    $curl->setopt(CURLOPT_URL, $url);
+
+    # Setup headers.
+    my $h = $self->{head};
+    $curl->setopt(CURLOPT_HTTPHEADER, [map {
+        my $n = $_;
+        map { "$n: $_" } $h->header($n)
+    } $h->header_field_names]);
+
+    # Setup the request body.
+    if ($body) {
+        open my $read, '<:raw', \$body;
+        $curl->setopt(CURLOPT_UPLOAD, 1);
+        $curl->setopt(WWW::Curl::Easy::CURLOPT_UPLOAD, 1);
+        $curl->setopt(WWW::Curl::Easy::CURLOPT_READDATA, \$read);
+    }
+
+    # Setup scalars to which to write the response headers and content.
+    my ($head, $content) = ('', '');
+    open my $head_fh, ">:raw", \$head;
+    $curl->setopt(CURLOPT_WRITEHEADER, $head_fh);
+    open my $body_fh, ">:raw", \$content;
+    $curl->setopt(CURLOPT_WRITEDATA, $body_fh);
+
+    # Limit to 5 redirects with valid auto-referer header.
+    $curl->setopt(CURLOPT_FOLLOWLOCATION, 1);
+    $curl->setopt(CURLOPT_MAXREDIRS, 5);
+    $curl->setopt(CURLOPT_AUTOREFERER, 1);
+
+    # Verify cert identification and provide a CA bundle if we have one.
+    $curl->setopt(CURLOPT_SSL_VERIFYPEER, 1);
+    $curl->setopt(CURLOPT_CAINFO, $self->{ca_bundle}) if $self->{ca_bundle};
+
+    # All set.
+    return $curl, \$head, \$content;
 }
 
 # Encode the data for a request. If the argument starts with "@", C<_data>

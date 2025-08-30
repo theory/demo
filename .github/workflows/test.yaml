@@ -7,12 +7,19 @@ jobs:
   test:
     name: ✅ Run Tests
     runs-on: ubuntu-latest
+    services:
+      httpbin:
+        image: mccutchen/go-httpbin
+        ports: [8080:8080]
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
       - name: apt-get install
         run: sudo make deb-install-deps
       - run: make test
+        env:
+          HTTPBIN_URL: http://localhost:${{ job.services.httpbin.ports['8080'] }}
       - run: make coveralls
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HTTPBIN_URL: http://localhost:${{ job.services.httpbin.ports['8080'] }}
