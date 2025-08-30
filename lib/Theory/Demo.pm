@@ -23,7 +23,7 @@ use Term::TermKey;
 use URI;
 use WWW::Curl::Easy;
 
-our $VERSION = v0.1.0;
+our $VERSION = v0.2.0;
 
 my $json = JSON::PP->new->utf8->allow_bignum;
 
