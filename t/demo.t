@@ -238,7 +238,8 @@ is $out, "bagel $gt ", 'Should have output just the prompt';
 # Test setenv and env.
 delete $ENV{TMPDIR};
 for (my ($k, $v) = each %ENV) {
-    is $demo->_env("foo \$$k bar"), "foo $v bar", "_env should replace \$$k";
+    is $demo->_env("foo \$$k bar"), 'foo ' . ($v || $k) . ' bar',
+        "_env should replace \$$k";
 }
 
 # Test with unknown variables.
