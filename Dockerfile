@@ -13,7 +13,7 @@ RUN apt-get update \
         libipc-system-simple-perl \
         libterm-termkey-perl \
         liburi-perl \
-        libwww-curl-simple-perl \
+        libwww-curl-perl \
         postgresql-client \
     && rm -fr /var/cache/apt/* /var/lib/apt/lists/* \
     && mkdir -p "$(perl -MConfig -e 'print $Config{installprivlib}')"/Theory \
