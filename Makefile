@@ -24,22 +24,20 @@ registry:
 
 .PHONY: deb-install-deps # Install Apt and Perl dependencies for testing on Debian.
 deb-install-deps:
-	apt-get install -y --no-install-recommends \
-      ca-certificates \
-      curl \
-      libcryptx-perl \
-      libdevel-cover-perl \
-      libio-socket-ssl-perl \
-      libipc-system-simple-perl \
-      libterm-termkey-perl \
-      libtest-exception-perl \
-      libtest-file-contents-perl \
-      libtest-mockmodule-perl \
-      libtest-nowarnings-perl \
-      liburi-perl \
-      libwww-curl-perl \
-      libyaml-perl \
-      make \
-      postgresql-client
+	DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
+        ca-certificates \
+        libcryptx-perl \
+        libhttp-message-perl \
+        libipc-system-simple-perl \
+        libterm-termkey-perl \
+        libwww-curl-perl \
+        postgresql-client \
+        curl \
+        libdevel-cover-perl \
+        libtest-exception-perl \
+        libtest-file-contents-perl \
+        libtest-mockmodule-perl \
+        libtest-nowarnings-perl \
+        libyaml-perl
 	mkdir -p "$$(perl -MConfig -e 'print $$Config{installprivlib}')"/Devel/Cover/Report
 	curl -s https://raw.githubusercontent.com/kan/coveralls-perl/refs/heads/master/lib/Devel/Cover/Report/Coveralls.pm -o "$$(perl -MConfig -e 'print $$Config{installprivlib}')"/Devel/Cover/Report/Coveralls.pm

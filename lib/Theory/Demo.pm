@@ -13,11 +13,9 @@ use HTTP::Headers;
 use HTTP::Request;
 use HTTP::Response;
 use HTTP::Status qw(HTTP_OK HTTP_CREATED HTTP_NO_CONTENT);
-use IO::Socket::SSL;
 use IPC::System::Simple 1.17 qw(capturex run runx capture);
 use JSON::PP ();
 use Math::BigInt;
-use Net::SSLeay;
 use Term::ANSIColor ();
 use Term::TermKey;
 use URI;
@@ -65,6 +63,13 @@ File handle to which to send output. Defaults to C<STDOUT>.
 
 List of headers to print when emitting an HTTP response. Defaults to
 C<['Location']>.
+
+=item C<type_chars>
+
+Boolean indicating that, rather than wait for the enter key to emit an entire
+line, emit the line character by character for any key entry until a newline,
+then wait for the enter key to go on to the next command. The enter key will
+still short-circuit the typing and print the rest of a line.
 
 =back
 
@@ -185,6 +190,30 @@ Returns when it has emitted all of the characters and hits the enter key.
 
 sub type {
     my $self = shift;
+    return $self->_type_chars(@_) if $self->{type_chars};
+    return $self->_type_lines(@_);
+}
+
+sub _type_lines {
+    my $self = shift;
+    my $tk = $self->{tk};
+    my $str = join ' ' => @_;
+
+    for (my $i = 0; $i < length $str; $i++) {
+        $tk->waitkey(my $k);
+        $tk->waitkey($k) until $k->format(0) eq 'Enter';
+
+        # Emit until newline.
+        my $c = substr $str, $i, 1;
+        while ($c ne "\n" && $i < length $str) {
+            $self->emit($c = substr $str, $i++, 1);
+        }
+    }
+    $self->wait_for_enter;
+}
+
+sub _type_chars {
+    my $self = shift;
     my $tk = $self->{tk};
     my $str = join ' ' => @_;
 
@@ -211,7 +240,6 @@ sub type {
             $self->emit($c = substr $str, ++$i, 1) if $i < length($str)-1;
         }
     }
-
     $self->wait_for_enter;
 }
 
@@ -294,7 +322,7 @@ passed to C<setenv> will be interpolated.
 
 =item * C<decode_json_file>
 
-=item * C<type_run_psql_query>
+=item * C<type_run_psql>
 
 =item * C<get_quiet>
 
@@ -461,7 +489,7 @@ sub decode_json_file {
     return $json->decode(join '', <$fh>);
 }
 
-=head C<type_run_psql_query>
+=head C<type_run_psql>
 
 Emits C<psql -tXxc "$query">, executes it, then calls C<nl_prompt>. The query
 may be multiple lines and must not contain double quotes.
@@ -655,7 +683,7 @@ sub _curl {
 }
 
 # Encode the data for a request. If the argument starts with "@", C<_data>
-# assumes it's a file path and reads and returns its raw bytes. Otherwise, 
+# assumes it's a file path and reads and returns its raw bytes. Otherwise,
 # it encodes and returns the argument as UTF-8 bytes.
 sub _data($) {
     my $data = shift;

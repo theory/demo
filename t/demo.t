@@ -137,50 +137,86 @@ $demo->{tk} = MockTermKey->new(qw(a b 8 9 Escape));
 $demo->wait_for_escape;
 is $out, "\n", 'Should have newline after escape';
 
-# Test type.
+##############################################################################
+# Test _type_chars and _type_lines.
 reset_output;
 $demo->{tk} = MockTermKey->new(qw(a b c Enter));
-$demo->type('now');
+$demo->_type_chars('now');
 is $out, "now\n", 'Should have typed "now"';
 
-# Test type with emoji.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(Enter Enter));
+$demo->_type_lines('now');
+is $out, "now\n", 'Should have typed "now"';
+
+# Test with emoji.
 reset_output;
 $demo->{tk} = MockTermKey->new(qw(a b c d Enter));
-$demo->type('go ⏰');
+$demo->_type_chars('go ⏰');
+is $out, encode_utf8("go ⏰\n"), 'Should have typed with emoji';
+
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(Enter Enter));
+$demo->_type_lines('go ⏰');
 is $out, encode_utf8("go ⏰\n"), 'Should have typed with emoji';
 
 # Test Enter to type to the end of a string.
 reset_output;
 $demo->{tk} = MockTermKey->new(qw(a b c Enter Enter));
-$demo->type(qw(now is the time));
+$demo->_type_chars(qw(now is the time));
+is $out, "now is the time\n", 'Should have typed "now is the time"';
+
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(Enter Enter));
+$demo->_type_lines(qw(now is the time));
 is $out, "now is the time\n", 'Should have typed "now is the time"';
 
 # Test Enter to type up to a newline.
 reset_output;
 $demo->{tk} = MockTermKey->new(qw(a b c Enter Enter Enter));
-$demo->type("now is the time\n", 'to drink coffee');
+$demo->_type_chars("now is the time\n", 'to drink coffee');
 is $out, "now is the time\n to drink coffee\n",
     'Should have typed both lines';
 
-# Test type with escapes.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(Enter Enter Enter));
+$demo->_type_lines("now is the time\n", 'to drink coffee');
+is $out, "now is the time\nto drink coffee\n",
+    'Should have typed both lines';
+
+# Test _type_chars with escapes.
 reset_output;
 my $msg = 'It’s ' . $demo->bold('clobberin’');
 $demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
-$demo->type($msg);
+$demo->_type_chars($msg);
 is $out, encode_utf8("$msg\n"), 'Should have typed with trailing ANSI escape';
 
 reset_output;
 $msg = 'It’s ' . $demo->bold('clobberin’') . ' time';
 $demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter', 'Enter');
-$demo->type($msg);
+$demo->_type_chars($msg);
 is $out, encode_utf8("$msg\n"), 'Should have typed with middle ANSI escape';
 
 reset_output;
 $msg = 'It’s ' . $demo->bold('');
 $demo->{tk} = MockTermKey->new(('x') x (1 + length $msg), 'Enter');
-$demo->type($msg);
+$demo->_type_chars($msg);
 is $out, encode_utf8("$msg\n"), 'Should have typed with empty ANSI escape';
 
+# Test type dispatch.
+reset_output;
+$demo->{tk} = MockTermKey->new(qw(Enter Enter));
+$demo->type('now');
+is $out, "now\n", 'Should have typed "now"';
+CHARS: {
+    local $demo->{type_chars} = 1;
+    reset_output;
+    $demo->{tk} = MockTermKey->new(qw(a b c Enter));
+    $demo->type('now');
+    is $out, "now\n", 'Should have typed "now"';
+}
+
+##############################################################################
 # Mock the type() method from here on.
 my $module = Test::MockModule->new('Theory::Demo');
 $module->mock(type => sub { shift->emit(join(' ', @_), "\n") });

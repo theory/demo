@@ -6,13 +6,12 @@ ADD --chmod=+x https://github.com/mikefarah/yq/releases/download/v4.47.1/yq_linu
 
 RUN apt-get update \
     # Keep in sync with deb-install-deps in Makefile.
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
         ca-certificates \
         libcryptx-perl \
-        libio-socket-ssl-perl \
+        libhttp-message-perl \
         libipc-system-simple-perl \
         libterm-termkey-perl \
-        liburi-perl \
         libwww-curl-perl \
         postgresql-client \
     && rm -fr /var/cache/apt/* /var/lib/apt/lists/* \
