@@ -374,23 +374,23 @@ $ipc->setup(runx_callback => sub {
         'Should have written JSON to temp file';
 });
 Theory::Demo::_yq(qq[{"emoji":"$emoji"}]);
-is_deeply $ipc->args, {runx => [[qw(yq -oj)]]}, 'Should have called yq';
+is_deeply $ipc->args, {runx => [['yq']]}, 'Should have called yq';
 
 # Test yq.
 reset_output;
 $ipc->setup;
 $demo->yq("some_file.yaml");
-is $out, "yq -oj . some_file.yaml\n\nbagel $gt ",
+is $out, "yq some_file.yaml\n\nbagel $gt ",
     'Should have typed yq command and then the prompt';
-is_deeply $ipc->args, { run => [["yq -oj . some_file.yaml"]]},
+is_deeply $ipc->args, { run => [["yq some_file.yaml"]]},
     'Should have executed yq on the file';
 
 reset_output;
 $ipc->setup;
 $demo->yq("some_file.yaml", ".body.profile");
-is $out, "yq -oj .body.profile some_file.yaml\n\nbagel $gt ",
+is $out, "yq .body.profile some_file.yaml\n\nbagel $gt ",
     'Should have typed yq command with path and then the prompt';
-is_deeply $ipc->args, { run => [["yq -oj .body.profile some_file.yaml"]]},
+is_deeply $ipc->args, { run => [["yq .body.profile some_file.yaml"]]},
     'Should have executed yq with the path on the file';
 
 # Test type_run_yq.
@@ -405,7 +405,7 @@ $ipc->setup(
 );
 $demo->type_run_yq('cat file.yaml');
 is_deeply $ipc->args, {
-    runx => [[qw(yq -oj)]],
+    runx => [[qw(yq)]],
     capture => [['cat file.yaml']]
 }, 'Should have captured the command and called yq';
 is $out, "cat file.yaml\n", 'Should have echoed command then prompt';

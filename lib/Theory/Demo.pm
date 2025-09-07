@@ -428,10 +428,10 @@ sub type_run_clean {
 
 # Runs a JSON object through yq for pretty-printing.
 sub _yq {
-    my $fh = File::Temp->new;
+    my $fh = File::Temp->new(SUFFIX => '.json');
     print {$fh} @_;
     $fh->close;
-    runx qw(yq -oj), $fh->filename;
+    runx 'yq', $fh->filename;
 }
 
 =head C<yq>
@@ -445,7 +445,7 @@ Selects and output a path from a JSON file using C<yq> for pretty-printing.
 
 sub yq {
     my ($self, $file, $path) = @_;
-    $self->type_run(join ' ', 'yq -oj', ($path // '.'), $file);
+    $self->type_run(join ' ', 'yq', ($path ? ($path) : ()), $file);
     $self->nl_prompt;
 }
 
