@@ -181,7 +181,7 @@ is $out, "now is the time\n to drink coffee\n",
 reset_output;
 $demo->{tk} = MockTermKey->new(qw(Enter Enter Enter));
 $demo->_type_lines("now is the time\n", 'to drink coffee');
-is $out, "now is the time\nto drink coffee\n",
+is $out, "now is the time\n to drink coffee\n",
     'Should have typed both lines';
 
 # Test _type_chars with escapes.
@@ -388,9 +388,9 @@ is_deeply $ipc->args, { run => [["yq some_file.yaml"]]},
 reset_output;
 $ipc->setup;
 $demo->yq("some_file.yaml", ".body.profile");
-is $out, "yq .body.profile some_file.yaml\n\nbagel $gt ",
+is $out, "yq '.body.profile' some_file.yaml\n\nbagel $gt ",
     'Should have typed yq command with path and then the prompt';
-is_deeply $ipc->args, { run => [["yq .body.profile some_file.yaml"]]},
+is_deeply $ipc->args, { run => [["yq '.body.profile' some_file.yaml"]]},
     'Should have executed yq with the path on the file';
 
 # Test type_run_yq.
@@ -454,9 +454,9 @@ is_deeply $ipc->args, {
 # Test with a single long line.
 reset_output;
 $ipc->setup;
-my $sql = q{    SELECT COUNT(*) FROM public.users WHERE name LIKE 'Smith%' AND status = 'active'};
+my $sql = q{SELECT COUNT(*) FROM public.users WHERE name LIKE 'Smith%' AND status = 'active'};
 $demo->type_run_psql($sql);
-is $out, qq{psql -tXxc "\n$sql\n"\n\nbagel $gt },
+is $out, qq{psql -tXxc << "EOQ"\n    $sql\nEOQ\n\nbagel $gt },
     'Should have long query on own line';
 is_deeply $ipc->args, {
     run => [[qq{psql -tXxc "$sql"}]],
@@ -466,12 +466,12 @@ is_deeply $ipc->args, {
 reset_output;
 $ipc->setup;
 my @sql = (
-    q{    SELECT COUNT(*) FROM public.users},
-    q{    WHERE  name LIKE 'Smith%'},
-    q{    AND    status = 'active'},
+    q{SELECT COUNT(*) FROM public.users},
+    q{ WHERE name LIKE 'Smith%'},
+    q{   AND status = 'active'},
 );
 $demo->type_run_psql(@sql);
-is $out, qq{psql -tXxc "\n} . join("\n", @sql) . qq{\n"\n\nbagel $gt },
+is $out, qq{psql -tXxc << "EOQ"\n    } . join("\n    ", @sql) . qq{\nEOQ\n\nbagel $gt },
     'Should have query on multiple lines';
 is_deeply $ipc->args, {
     run => [[qq{psql -tXxc "} . join(' ', @sql) . qq{"}]],

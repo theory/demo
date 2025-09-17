@@ -64,6 +64,10 @@ File handle to which to send output. Defaults to C<STDOUT>.
 List of headers to print when emitting an HTTP response. Defaults to
 C<['Location']>.
 
+=item C<clear>
+
+Makes the C<clear> method a no-op when set to false. Defaults to true.
+
 =item C<type_chars>
 
 Boolean indicating that, rather than wait for the enter key to emit an entire
@@ -98,6 +102,7 @@ sub new {
     # Set up environment.
     $params{env} = {%ENV};
     $params{env}->{TMPDIR} =~ s/\/+\z// if $ENV{TMPDIR};
+    $params{clear} //= 1;
 
     # Trim trailing slash from base URL and return the object.
     $params{base_url} =~ s/\/+\z// if $params{base_url};
@@ -198,16 +203,18 @@ sub _type_lines {
     my $self = shift;
     my $tk = $self->{tk};
     my $str = join ' ' => @_;
+    my $len = length $str;
 
-    for (my $i = 0; $i < length $str; $i++) {
+    for (my $i = 0; $i < $len; $i++) {
         $tk->waitkey(my $k);
-        $tk->waitkey($k) until $k->format(0) eq 'Enter';
+        $tk->waitkey($k) while $k->format(0) ne 'Enter';
 
         # Emit until newline.
         my $c = substr $str, $i, 1;
         while ($c ne "\n" && $i < length $str) {
             $self->emit($c = substr $str, $i++, 1);
         }
+        $i--;
     }
     $self->wait_for_enter;
 }
@@ -268,38 +275,47 @@ sub comment {
 
 =head3 C<start>
 
-Clears the screen, emits a prompt, and emits any arguments as comments
-followed by a prompt.
+Clears the screen unless C<$self->{clear}> is false, emits a prompt, and
+emits any arguments as comments followed by a prompt.
 
 =cut
 
 sub start {
     my $self = shift;
-    $self->clear_now;
+    if ($self->{clear}) {
+        $self->clear_now;
+    } else {
+        $self->prompt;
+    }
     $self->comment(@_) if @_;
 }
 
 =head3 C<clear>
 
-Types "clear" then clears the screen and emits a prompt.
+Types "clear" then clears the screen and emits a prompt. A op-opt when
+C<$self->{clear}> is false.
 
 =cut
 
 sub clear {
     my $self = shift;
+    return unless $self->{clear};
     $self->type('clear');
     $self->clear_now;
 }
 
 =head3 C<clear>
 
-Clears the screen and emits a prompt.
+Clears the screen and emits a prompt. A op-opt when C<$self->{clear}> is
+false.
 
 =cut
 
 sub clear_now {
+    my $self = shift;
+    return unless $self->{clear};
     runx 'clear';
-    shift->prompt;
+    $self->prompt;
 }
 
 =head3 C<setenv>
@@ -439,13 +455,14 @@ sub _yq {
   $demo->yq('some_file.yaml');
   $demo->yq('some_file.yml', ".body.profile");
 
-Selects and output a path from a JSON file using C<yq> for pretty-printing.
+Selects and output a path from a JSON file using C<yq> for pretty-printing. Path must
+be safe to use single-quoted in a shell.
 
 =cut
 
 sub yq {
     my ($self, $file, $path) = @_;
-    $self->type_run(join ' ', 'yq', ($path ? ($path) : ()), $file);
+    $self->type_run(join ' ', 'yq', ($path ? ("'$path'") : ()), $file);
     $self->nl_prompt;
 }
 
@@ -505,7 +522,7 @@ sub type_run_psql {
     if (@_ == 1 && length $_[0] < 72) {
         $self->type(qq{psql -tXxc "$_[0]"});
     } else {
-        $self->type(qq{psql -tXxc "\n} . join("\n", @_) . qq{\n"});
+        $self->type(qq{psql -tXxc << "EOQ"\n    } . join("\n    ", @_) . qq{\nEOQ});
     }
     run $self->_env('psql -tXxc "' . join(' ', @_) . '"');
     $self->nl_prompt;
