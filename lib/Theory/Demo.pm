@@ -275,7 +275,7 @@ sub comment {
 
 =head3 C<start>
 
-Clears the screen unless C<$self->{clear}> is false, emits a prompt, and
+Clears the screen and emits a prompt unless C<$self->{clear}> is false, and
 emits any arguments as comments followed by a prompt.
 
 =cut
@@ -284,8 +284,6 @@ sub start {
     my $self = shift;
     if ($self->{clear}) {
         $self->clear_now;
-    } else {
-        $self->prompt;
     }
     $self->comment(@_) if @_;
 }
@@ -411,6 +409,7 @@ sub type_run {
     my $self = shift;
     $self->type_lines(@_);
     run $self->_env(join ' ', @_);
+    $self->nl_prompt;
 }
 
 =head C<run_quiet>
@@ -440,6 +439,7 @@ sub type_run_clean {
         map { s{\Q$self->{env}{TMPDIR}\E}{/tmp}gr }
         capture $self->_env(join ' ', @_),
     );
+    $self->nl_prompt;
 }
 
 # Runs a JSON object through yq for pretty-printing.
@@ -463,7 +463,6 @@ be safe to use single-quoted in a shell.
 sub yq {
     my ($self, $file, $path) = @_;
     $self->type_run(join ' ', 'yq', ($path ? ("'$path'") : ()), $file);
-    $self->nl_prompt;
 }
 
 =head C<type_run_yq>
@@ -525,6 +524,24 @@ sub type_run_psql {
         $self->type(qq{psql -tXxc << "EOQ"\n    } . join("\n    ", @_) . qq{\nEOQ});
     }
     run $self->_env('psql -tXxc "' . join(' ', @_) . '"');
+    $self->nl_prompt;
+}
+
+=head C<type_run_psql_yq>
+
+Pipes C<psql -tXc> to C<yq -oj> to format JSON output. The query should return
+a single value in order to be properly formatted.
+
+=cut
+
+sub type_run_psql_yq {
+    my $self = shift;
+    if (@_ == 1 && length $_[0] < 64) {
+        $self->type(qq{psql -tXc "$_[0]" | yq -oj});
+    } else {
+        $self->type(qq{psql -tX << "EOQ" | yq -oj\n    } . join("\n    ", @_) . qq{\nEOQ});
+    }
+    run $self->_env('psql -tXc "' . join(' ', @_) . '" | yq -oj');
     $self->nl_prompt;
 }
 
@@ -834,7 +851,7 @@ sub _type_url {
     my ($self, $method, $path, $data) = @_;
     $self->type(
         $method, "$self->{base_url}/$path",
-        (defined $data ? ($data) : ()),
+        (defined $data ? ("'$data'") : ()),
     );
     return $self->_url($path)
 }
@@ -851,7 +868,6 @@ sub tail_docker_log {
     my ($self, $container, $num_lines) = @_;
     $num_lines ||= 4;
     $self->type_run("docker logs -n $num_lines '$container'");
-    $self->nl_prompt;
 }
 
 1;

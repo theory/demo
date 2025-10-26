@@ -325,14 +325,15 @@ is $out, join(" \\\n", @lorum) . "\n", 'Should have typed multiple lines';
 reset_output;
 $ipc->setup;
 $demo->type_run($lorum[0]);
-is $out, "$lorum[0]\n", 'Should have typed single line';
+is $out, "$lorum[0]\n\nbagel $gt ", 'Should have typed single line';
 is_deeply $ipc->args, { run => [[$lorum[0]]]},
     'Should have executed single line';
 
 reset_output;
 $ipc->setup;
 $demo->type_run(@lorum);
-is $out, join(" \\\n", @lorum) . "\n", 'Should have typed multiple lines';
+is $out, join(" \\\n", @lorum) . "\n\nbagel $gt ",
+    'Should have typed multiple lines';
 is_deeply $ipc->args, { run => [[join ' ' => @lorum]]},
     'Should have executed multiple lines';
 
@@ -349,7 +350,7 @@ reset_output;
 $ipc->setup(capture_returns => ["this is /tmp/foo/bar/baz lol\n"]);
 $demo->{env}{TMPDIR} = '/tmp/foo/bar';
 $demo->type_run_clean("ls -lah");
-is $out, "ls -lah\nthis is /tmp/baz lol\n",
+is $out, "ls -lah\nthis is /tmp/baz lol\n\nbagel $gt ",
     'Should have typed command and cleaned output';
 is_deeply $ipc->args, { capture => [["ls -lah"]]},
     'Should have passed command to capture';
@@ -359,7 +360,7 @@ reset_output;
 delete $demo->{env}{TMPDIR};
 $ipc->setup;
 $demo->type_run_clean("ls -lah");
-is $out, "ls -lah\n",
+is $out, "ls -lah\n\nbagel $gt ",
     'Should have typed command and uncleaned output';
 is_deeply $ipc->args, { run => [["ls -lah"]]},
     'Should have passed command to run';
@@ -724,7 +725,7 @@ for my $tc (
     is_deeply \@handle_args, [
         $demo->request($tc->{action}, $url, $data), $tc->{exp} || $tc->{code},
     ], 'Should have passed request and default code to handle';
-    is $out, "$tc->{action} $url " . encode_utf8 "$tc->{body}\n",
+    is $out, "$tc->{action} $url '" . encode_utf8 "$tc->{body}'\n",
         "Should have output the $tc->{action} request";
 }
 

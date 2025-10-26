@@ -8,6 +8,7 @@ RUN apt-get update \
     # Keep in sync with deb-install-deps in Makefile.
     && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
         ca-certificates \
+        curl \
         libcryptx-perl \
         libhttp-message-perl \
         libipc-system-simple-perl \
