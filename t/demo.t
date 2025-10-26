@@ -6,6 +6,7 @@ use warnings;
 use utf8;
 use Encode qw(encode_utf8);
 use HTTP::Status qw(:constants);
+use String::ShellQuote;
 use Test::More 'no_plan';
 use Test::MockModule;
 use Test::File::Contents;
@@ -44,6 +45,7 @@ isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'demo', 'Should have default prompt';
 is $demo->{out}, \*STDOUT, 'Should point to STDOUT';
 is_deeply $demo->{env}, {%ENV}, 'Should have copied %ENV';
+ok $demo->{clear}, 'Should have set clear';
 
 # Test all params.
 $ENV{TMPDIR} = '/tmp/';
@@ -56,6 +58,7 @@ ok $demo = Theory::Demo->new(
     input     => $input,
     output    => $output,
     headers   => [qw(Location Link)],
+    clear     => 0,
 ), 'Should create demo with all params';
 
 my $head = HTTP::Headers->new;
@@ -66,6 +69,7 @@ is_deeply $demo->{headers}, [qw(Location Link)], 'Should have passed headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'bagel', 'Should have specified prompt';
 is $demo->{out}, $output, 'Should point to output file handle';
+ok !$demo->{clear}, 'Should have unset clear';
 is_deeply $demo->{env}, {%ENV, TMPDIR => '/tmp'},
     'Should have copied %ENV and stripped the trailing slash from TMPDIR';
 
@@ -245,6 +249,7 @@ $module->mock(capturex => sub { $ipc->capturex(@_) });
 
 # Test start.
 reset_output;
+$demo->{clear} = 1;
 $demo->start;
 is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
 is $out, "bagel $gt ", 'Should have output prompt';
@@ -256,19 +261,44 @@ $msg = $demo->bold('# howdy');
 is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
 is $out, "bagel $gt $msg\nbagel $gt ", 'Should have output prompt and comment';
 
+# Test start without clear.
+$demo->{clear} = 0;
+reset_output;
+$ipc->setup;
+$demo->start('howdy');
+$msg = $demo->bold('# howdy');
+is_deeply $ipc->args, {}, 'Should not have run clear';
+is $out, "$msg\nbagel $gt ", 'Should have output just the comment';
+
 # Test clear.
+$demo->{clear} = 1;
 reset_output;
 $ipc->setup;
 $demo->clear;
 is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
 is $out, "clear\nbagel $gt ", 'Should have output clear and prompt';
 
+$demo->{clear} = 0;
+reset_output;
+$ipc->setup;
+$demo->clear;
+is_deeply $ipc->args, {}, 'Should not have run clear';
+is $out, "", 'Should have no output';
+
 # Test clear_now.
+$demo->{clear} = 1;
 reset_output;
 $ipc->setup;
 $demo->clear_now;
 is_deeply $ipc->args, {runx => [['clear']]}, 'Should have run clear';
 is $out, "bagel $gt ", 'Should have output just the prompt';
+
+reset_output;
+$ipc->setup;
+$demo->{clear} = 0;
+$demo->clear_now;
+is_deeply $ipc->args, {}, 'Should not have run clear';
+is $out, "", 'Should have no output';
 
 ##############################################################################
 # Test setenv and env.
@@ -389,9 +419,17 @@ is_deeply $ipc->args, { run => [["yq some_file.yaml"]]},
 reset_output;
 $ipc->setup;
 $demo->yq("some_file.yaml", ".body.profile");
-is $out, "yq '.body.profile' some_file.yaml\n\nbagel $gt ",
+is $out, "yq .body.profile some_file.yaml\n\nbagel $gt ",
     'Should have typed yq command with path and then the prompt';
-is_deeply $ipc->args, { run => [["yq '.body.profile' some_file.yaml"]]},
+is_deeply $ipc->args, { run => [["yq .body.profile some_file.yaml"]]},
+    'Should have executed yq with the path on the file';
+
+reset_output;
+$ipc->setup;
+$demo->yq("'some file.yaml'", "'.body.*'");
+is $out, "yq '.body.*' 'some file.yaml'\n\nbagel $gt ",
+    'Should have typed yq command with file and path quoted';
+is_deeply $ipc->args, { run => [["yq '.body.*' 'some file.yaml'"]]},
     'Should have executed yq with the path on the file';
 
 # Test type_run_yq.
@@ -476,6 +514,37 @@ is $out, qq{psql -tXxc << "EOQ"\n    } . join("\n    ", @sql) . qq{\nEOQ\n\nbage
     'Should have query on multiple lines';
 is_deeply $ipc->args, {
     run => [[qq{psql -tXxc "} . join(' ', @sql) . qq{"}]],
+}, 'Should have run the multiline psql command';
+
+##############################################################################
+# Test type_run_psql_yq with a short query.
+reset_output;
+$ipc->setup;
+$demo->type_run_psql_yq("SELECT COUNT(*) FROM users");
+is $out, qq{psql -tXc "SELECT COUNT(*) FROM users" | yq -oj\n\nbagel $gt },
+    'Should have one-line query output';
+is_deeply $ipc->args, {
+    run => [[qq{psql -tXc "SELECT COUNT(*) FROM users" | yq -oj}]],
+}, 'Should have run the psql command';
+
+# Test with a single long line.
+reset_output;
+$ipc->setup;
+$demo->type_run_psql_yq($sql);
+is $out, qq{psql -tX << "EOQ" | yq -oj\n    $sql\nEOQ\n\nbagel $gt },
+    'Should have long query on own line';
+is_deeply $ipc->args, {
+    run => [[qq{psql -tXc "$sql" | yq -oj}]],
+}, 'Should have run the psql command';
+
+# Test with multiple lines.
+reset_output;
+$ipc->setup;
+$demo->type_run_psql_yq(@sql);
+is $out, qq{psql -tX << "EOQ" | yq -oj\n    } . join("\n    ", @sql) . qq{\nEOQ\n\nbagel $gt },
+    'Should have query on multiple lines';
+is_deeply $ipc->args, {
+    run => [[qq{psql -tXc "} . join(' ', @sql) . qq{" | yq -oj}]],
 }, 'Should have run the multiline psql command';
 
 ##############################################################################
@@ -725,7 +794,7 @@ for my $tc (
     is_deeply \@handle_args, [
         $demo->request($tc->{action}, $url, $data), $tc->{exp} || $tc->{code},
     ], 'Should have passed request and default code to handle';
-    is $out, "$tc->{action} $url '" . encode_utf8 "$tc->{body}'\n",
+    is $out, "$tc->{action} $url " . encode_utf8 shell_quote($tc->{body}) . "\n",
         "Should have output the $tc->{action} request";
 }
 

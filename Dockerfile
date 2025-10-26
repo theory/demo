@@ -12,6 +12,7 @@ RUN apt-get update \
         libcryptx-perl \
         libhttp-message-perl \
         libipc-system-simple-perl \
+        libstring-shellquote-perl \
         libterm-termkey-perl \
         libwww-curl-perl \
         postgresql-client \

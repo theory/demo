@@ -17,11 +17,12 @@ use IPC::System::Simple 1.17 qw(capturex run runx capture);
 use JSON::PP ();
 use Math::BigInt;
 use Term::ANSIColor ();
+use String::ShellQuote;
 use Term::TermKey;
 use URI;
 use WWW::Curl::Easy;
 
-our $VERSION = v0.30.0;
+our $VERSION = v0.31.0;
 
 my $json = JSON::PP->new->utf8->allow_bignum;
 
@@ -455,14 +456,14 @@ sub _yq {
   $demo->yq('some_file.yaml');
   $demo->yq('some_file.yml', ".body.profile");
 
-Selects and output a path from a JSON file using C<yq> for pretty-printing. Path must
-be safe to use single-quoted in a shell.
+Selects and output a path from a JSON file using C<yq> for pretty-printing.
+Arguments must properly quoted for use in a shell.
 
 =cut
 
 sub yq {
     my ($self, $file, $path) = @_;
-    $self->type_run(join ' ', 'yq', ($path ? ("'$path'") : ()), $file);
+    $self->type_run(join ' ', 'yq', ($path ? ($path) : ()), $file);
 }
 
 =head C<type_run_yq>
@@ -480,6 +481,7 @@ sub type_run_yq {
 =head C<diff>
 
 Diffs two files. Requires C<--color>. On macOS, C<brew install diffutils>.
+Arguments must properly quoted for use in a shell.
 
 =cut
 
@@ -494,7 +496,7 @@ sub diff {
 
 Decodes the contents of a file into JSON and returns the resulting Perl value.
 Decodes large numbers into L<Math::BigInt> or L<Math::BigFloat> values, as
-appropriate.
+appropriate. The file name must be properly quoted for use in a shell.
 
 =cut
 
@@ -850,8 +852,8 @@ sub _url {
 sub _type_url {
     my ($self, $method, $path, $data) = @_;
     $self->type(
-        $method, "$self->{base_url}/$path",
-        (defined $data ? ("'$data'") : ()),
+        $method, shell_quote("$self->{base_url}/$path"),
+        (defined $data ? (shell_quote $data) : ()),
     );
     return $self->_url($path)
 }

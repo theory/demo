@@ -1,4 +1,4 @@
-VERSION  := v0.30.0
+VERSION  := v0.31.0
 REVISION := $(shell git rev-parse --short HEAD)
 REGISTRY ?= localhost:5001
 
@@ -29,6 +29,7 @@ deb-install-deps:
         libcryptx-perl \
         libhttp-message-perl \
         libipc-system-simple-perl \
+        libstring-shellquote-perl \
         libterm-termkey-perl \
         libwww-curl-perl \
         postgresql-client \
