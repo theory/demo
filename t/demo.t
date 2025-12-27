@@ -792,13 +792,24 @@ for my $tc (
     reset_output;
     ok my $meth = $demo->can($tc->{meth}), "can($tc->{meth})";
     is $demo->$meth($path, $tc->{body}, $tc->{code}), undef,
-        "Should undef from $tc->{meth}";
+        "Should get undef from $tc->{meth}";
     my $data = Theory::Demo::_data $tc->{body};
     is_deeply \@handle_args, [
         $demo->request($tc->{action}, $url, $data), $tc->{exp} || $tc->{code},
     ], 'Should have passed request and default code to handle';
     is $out, "$tc->{action} $url " . encode_utf8 shell_quote($tc->{body}) . "\n",
         "Should have output the $tc->{action} request";
+
+    if (my $meth = $demo->can("$tc->{meth}_quiet")) {
+        reset_output;
+        is $demo->$meth($path, $tc->{body}, $tc->{code}), undef,
+            "Should undef from $tc->{meth}_quiet";
+        my $data = Theory::Demo::_data $tc->{body};
+        is_deeply \@handle_args, [
+            $demo->request($tc->{action}, $url, $data), $tc->{exp} || $tc->{code}, 1,
+        ], 'Should have passed request and default code to handle';
+        is $out, "", "Should not have output the $tc->{meth}_quiet request";
+    }
 }
 
 # Test request when curl returns an error.

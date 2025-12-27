@@ -348,6 +348,8 @@ passed to C<setenv> will be interpolated.
 
 =item * C<get_quiet>
 
+=item * C<post_quiet>
+
 =item * C<get>
 
 =item * C<del>
@@ -792,6 +794,21 @@ expected status defaults to L<HTTP::Status::HTTP_CREATED> (C<201>).
 sub post {
     my ($self, $path, $data, $expect_status) = @_;
     $self->_req('POST', $path, $expect_status || HTTP_CREATED, $data);
+}
+
+=head C<post_quiet>
+
+Like L<C<post>> but does not type out the "post $url" line.
+
+=cut
+
+sub post_quiet {
+    my ($self, $path, $data, $expect_status) = @_;
+    $self->handle(
+        $self->request(POST => $self->_url($path), _data $data),
+        $expect_status || HTTP_CREATED,
+        1,
+    );
 }
 
 =head C<put>
