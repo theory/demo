@@ -22,7 +22,7 @@ use Term::TermKey;
 use URI;
 use WWW::Curl::Easy;
 
-our $VERSION = v0.31.0;
+our $VERSION = v0.32.0;
 
 my $json = JSON::PP->new->utf8->allow_bignum;
 
@@ -48,9 +48,14 @@ The base URL to prepend to all requests.
 
 Path to a PEM-encoded certificate authority bundle.
 
+=item C<authorization>
+
+String to include in the Authorization header.
+
 =item C<user>
 
-Username to include in the Authorization header. Defaults to "demo".
+Username to include in the Authorization header. Ignored if C<authorization>
+is set.
 
 =item C<input>
 
@@ -86,7 +91,9 @@ sub new {
     $params{head} = HTTP::Headers->new(
         #'Content-Type'  => 'application/json',
     );
-    if (my $u = delete $params{user}) {
+    if (my $auth = delete $params{authorization}) {
+        $params{head}->authorization($auth);
+    } elsif (my $u = delete $params{user}) {
         $params{head}->authorization_basic($u);
     }
 

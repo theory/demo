@@ -37,9 +37,11 @@ sub reset_output {
 
 ##############################################################################
 # Test just input param.
-ok my $demo = Theory::Demo->new(input => $input),
+ok my $demo = Theory::Demo->new(input => $input, user => 'peggy'),
      'Should create demo with just input param';
-is_deeply $demo->{head}, HTTP::Headers->new, 'Should have empty headers';
+my $head = HTTP::Headers->new;
+$head->authorization_basic('peggy');
+is_deeply$demo->{head}, $head, 'Should have configured basic auth header';
 is_deeply $demo->{headers}, ['Location'], 'Should have default emit headers';
 isa_ok $demo->{tk}, 'Term::TermKey';
 is $demo->{prompt}, 'demo', 'Should have default prompt';
@@ -51,19 +53,20 @@ ok $demo->{clear}, 'Should have set clear';
 $ENV{TMPDIR} = '/tmp/';
 $ENV{HARPO_TEST_VAL} = 'gargantuan';
 ok $demo = Theory::Demo->new(
-    prompt    => 'bagel',
-    base_url  => 'https://hi/',
-    ca_bundle => 'foo',
-    user      => 'peggy',
-    input     => $input,
-    output    => $output,
-    headers   => [qw(Location Link)],
-    clear     => 0,
+    prompt        => 'bagel',
+    base_url      => 'https://hi/',
+    ca_bundle     => 'foo',
+    user          => 'peggy',
+    authorization => 'Bearer 1234',
+    input         => $input,
+    output        => $output,
+    headers       => [qw(Location Link)],
+    clear         => 0,
 ), 'Should create demo with all params';
 
-my $head = HTTP::Headers->new;
-$head->authorization_basic('peggy');
-is_deeply$demo->{head}, $head, 'Should have configured headers';
+$head = HTTP::Headers->new;
+$head->authorization('Bearer 1234');
+is_deeply$demo->{head}, $head, 'Should have configured authorization header';
 is $demo->{ca_bundle}, 'foo', 'Should have passed ca_bundle';
 is_deeply $demo->{headers}, [qw(Location Link)], 'Should have passed headers';
 isa_ok $demo->{tk}, 'Term::TermKey';

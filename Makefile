@@ -1,4 +1,4 @@
-VERSION  := v0.31.0
+VERSION  := v0.32.0
 REVISION := $(shell git rev-parse --short HEAD)
 REGISTRY ?= localhost:5001
 
