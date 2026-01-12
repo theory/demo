@@ -82,6 +82,10 @@ line, emit the line character by character for any key entry until a newline,
 then wait for the enter key to go on to the next command. The enter key will
 still short-circuit the typing and print the rest of a line.
 
+=item C<content_type>
+
+Content type to include in all HTTP requests. Defaults to no content type.
+
 =back
 
 =cut
@@ -89,9 +93,10 @@ still short-circuit the typing and print the rest of a line.
 sub new {
     my ($pkg, %params) = @_;
     # Configure request headers.
-    $params{head} = HTTP::Headers->new(
-        #'Content-Type'  => 'application/json',
-    );
+    $params{head} = HTTP::Headers->new;
+    if (my $type = delete $params{content_type}) {
+        $params{head}->content_type($type);
+    }
     if (my $auth = delete $params{authorization}) {
         $params{head}->authorization($auth);
     } elsif (my $u = delete $params{user}) {

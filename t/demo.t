@@ -69,6 +69,7 @@ ok $demo = Theory::Demo->new(
     ca_bundle     => 'foo',
     user          => 'peggy',
     authorization => 'Bearer 1234',
+    content_type  => 'application/json',
     input         => $input,
     output        => $output,
     headers       => [qw(Location Link)],
@@ -77,6 +78,7 @@ ok $demo = Theory::Demo->new(
 
 $head = HTTP::Headers->new;
 $head->authorization('Bearer 1234');
+$head->content_type('application/json');
 is_deeply$demo->{head}, $head, 'Should have configured authorization header';
 is $demo->{ca_bundle}, 'foo', 'Should have passed ca_bundle';
 is_deeply $demo->{headers}, [qw(Location Link)], 'Should have passed headers';
