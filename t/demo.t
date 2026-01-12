@@ -37,9 +37,20 @@ sub reset_output {
 
 ##############################################################################
 # Test just input param.
-ok my $demo = Theory::Demo->new(input => $input, user => 'peggy'),
+ok my $demo = Theory::Demo->new(input => $input),
      'Should create demo with just input param';
 my $head = HTTP::Headers->new;
+is_deeply$demo->{head}, $head, 'Should have no request headers';
+is_deeply $demo->{headers}, ['Location'], 'Should have default emit headers';
+isa_ok $demo->{tk}, 'Term::TermKey';
+is $demo->{prompt}, 'demo', 'Should have default prompt';
+is $demo->{out}, \*STDOUT, 'Should point to STDOUT';
+is_deeply $demo->{env}, {%ENV}, 'Should have copied %ENV';
+ok $demo->{clear}, 'Should have set clear';
+
+# Test with the user param.
+ok $demo = Theory::Demo->new(input => $input, user => 'peggy'),
+     'Should create demo with just input param';
 $head->authorization_basic('peggy');
 is_deeply$demo->{head}, $head, 'Should have configured basic auth header';
 is_deeply $demo->{headers}, ['Location'], 'Should have default emit headers';
@@ -685,7 +696,7 @@ is $demo->get("/some/path"), undef, 'Should get undef from get';
 is_deeply \@handle_args, [
     $demo->request(GET => $demo->_url("/some/path")), HTTP_OK,
 ], 'Should have passed request and default code to handle';
-is $out, "GET https://hi//some/path\n",
+is $out, "GET -H \$AUTH https://hi//some/path\n",
     'Should have output the GET request';
 
 # Test get with status code.
@@ -695,7 +706,7 @@ is $demo->get("/some/path", HTTP_ACCEPTED), undef, 'Should get undef from get';
 is_deeply \@handle_args, [
     $demo->request(GET => $demo->_url("/some/path")), HTTP_ACCEPTED,
 ], 'Should have passed request and code to handle';
-is $out, "GET https://hi//some/path\n", 'Should have output the GET request';
+is $out, "GET -H \$AUTH https://hi//some/path\n", 'Should have output the GET request';
 
 # Test get_quiet
 reset_output;
@@ -724,7 +735,7 @@ is $demo->del("/some/path"), undef, 'Should del undef from del';
 is_deeply \@handle_args, [
     $demo->request(DELETE => $demo->_url("/some/path")), HTTP_NO_CONTENT,
 ], 'Should have passed request and default code to handle';
-is $out, "DELETE https://hi//some/path\n", 'Should have output the DELETE request';
+is $out, "DELETE -H \$AUTH https://hi//some/path\n", 'Should have output the DELETE request';
 
 # Test del with status code.
 reset_output;
@@ -733,7 +744,7 @@ is $demo->del("/some/path", HTTP_OK), undef, 'Should del undef from del';
 is_deeply \@handle_args, [
     $demo->request(DELETE => $demo->_url("/some/path")), HTTP_OK,
 ], 'Should have passed request and code to handle';
-is $out, "DELETE https://hi//some/path\n", 'Should have output the DELETE request';
+is $out, "DELETE -H \$AUTH https://hi//some/path\n", 'Should have output the DELETE request';
 
 ##############################################################################
 # Test post, put, patch, and query.
@@ -741,48 +752,54 @@ my $path = "/some/path";
 my $url = $demo->_url($path);
 for my $tc (
     {
-        meth => 'post',
+        meth   => 'post',
         action => 'POST',
-        body => '{"id": 1234, "name": "🐥"}',
-        code => HTTP_ACCEPTED,
+        body   => '{"id": 1234, "name": "🐥"}',
+        code   => HTTP_ACCEPTED,
     },
     {
-        meth => 'post',
+        meth   => 'post',
         action => 'POST',
-        body => "\@$json_file",
-        exp => HTTP_CREATED,
+        body   => "\@$json_file",
+        exp    => HTTP_CREATED,
     },
     {
+        auth   => 'Bearer bagel:',
         meth => 'put',
         action => 'PUT',
         body => '{"id": 1234}',
         code => HTTP_ACCEPTED,
     },
     {
+        auth   => 'Bearer TOKEN:',
         meth => 'put',
         action => 'PUT',
         body => "\@$json_file",
         exp => HTTP_OK,
     },
     {
+        auth   => 'Basic robe:',
         meth => 'patch',
         action => 'PATCH',
         body => '{"id": 1234}',
         code => HTTP_ACCEPTED,
     },
     {
+        auth   => 'Bearer desk:',
         meth => 'patch',
         action => 'PATCH',
         body => "\@$json_file",
         exp => HTTP_OK,
     },
     {
+        auth   => 'Bearer chair:',
         meth => 'query',
         action => 'QUERY',
         body => '{"id": 1234}',
         code => HTTP_ACCEPTED,
     },
     {
+        auth   => 'Bearer glass:',
         meth => 'query',
         action => 'QUERY',
         body => "\@$json_file",
@@ -791,13 +808,20 @@ for my $tc (
 ) {
     reset_output;
     ok my $meth = $demo->can($tc->{meth}), "can($tc->{meth})";
+    if ($tc->{auth}) {
+        $demo->{head}->authorization($tc->{auth});
+    } else {
+        $demo->{head}->remove_header('Authorization');
+    }
+    diag "AUTH: ", $demo->{head}->authorization;
     is $demo->$meth($path, $tc->{body}, $tc->{code}), undef,
         "Should get undef from $tc->{meth}";
     my $data = Theory::Demo::_data $tc->{body};
     is_deeply \@handle_args, [
         $demo->request($tc->{action}, $url, $data), $tc->{exp} || $tc->{code},
     ], 'Should have passed request and default code to handle';
-    is $out, "$tc->{action} $url " . encode_utf8 shell_quote($tc->{body}) . "\n",
+    my $auth = $tc->{auth} ? " -H \$AUTH" : '';
+    is $out, "$tc->{action}$auth $url " . encode_utf8 shell_quote($tc->{body}) . "\n",
         "Should have output the $tc->{action} request";
 
     if (my $meth = $demo->can("$tc->{meth}_quiet")) {

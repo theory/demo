@@ -50,12 +50,13 @@ Path to a PEM-encoded certificate authority bundle.
 
 =item C<authorization>
 
-String to include in the Authorization header.
+String to include in the Authorization header. Request echo includes
+C<-H $AUTH> if set.
 
 =item C<user>
 
 Username to include in the Authorization header. Ignored if C<authorization>
-is set.
+is set. Request echo includes C<-H $AUTH> if set.
 
 =item C<input>
 
@@ -870,13 +871,16 @@ sub _url {
     return URI->new($self->{base_url} . '/' . $self->_env($path));
 }
 
-# Type C<$method $self->{base_url}/$path> followed by `$data` if it's defined
-# Then creates and returns a L<URI> concatenating the C<base_url> passed to
-# C<new()> with C<$path>, replacing environment variables in C<$path>.
+# Type C<$method $self->{base_url}/$path> followed by `$data` if it's defined.
+# Insert C<-H $AUTH> after $method if C<authorization> is set. Then creates
+# and returns a L<URI> concatenating the C<base_url> passed to C<new()> with
+# C<$path>, replacing environment variables in C<$path>.
 sub _type_url {
     my ($self, $method, $path, $data) = @_;
     $self->type(
-        $method, shell_quote("$self->{base_url}/$path"),
+        $method,
+        ($self->{head}->authorization ? ('-H $AUTH') : ()),
+        shell_quote("$self->{base_url}/$path"),
         (defined $data ? (shell_quote $data) : ()),
     );
     return $self->_url($path)
