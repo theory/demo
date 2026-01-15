@@ -335,12 +335,31 @@ is $demo->_env(undef), undef, 'Should get undef for undef arg to _env';
 is $demo->_env(""), "", 'Should get "" for "" arg to _env';
 
 # Add more variables.
+reset_output;
 $demo->setenv(PERSON => 'theory');
+is $out, qq{PERSON="theory"\nbagel $gt }, 'Should have echoed setting PERSON';
+reset_output;
 $demo->setenv(FELINE => 'bagel');
+is $out, qq{FELINE="bagel"\nbagel $gt }, 'Should have echoed setting FELINE';
 is $demo->_env("foo \$PERSON bar"), "foo theory bar",
     "_env should replace \$PERSON with the variable value";
 is $demo->_env("foo \$FELINE bar"), "foo bagel bar",
     "_env should replace \$FELINE with the variable value";
+
+##############################################################################
+# Test authorize.
+reset_output;
+ok $demo->authorize('Bearer 4242'), 'Authorize';
+is $out, qq{AUTH="Authorization: Bearer 4242"\nbagel $gt },
+    'Should have echoed setting AUTH';
+$head->authorization('Bearer 4242');
+is_deeply $demo->{head}, $head, 'Should have updated authorization header';
+
+reset_output;
+ok $demo->authorize('Basic hello', 1), 'Authorize again, quietly';
+is $out, '', 'Should not have echoed setting AUTH';
+$head->authorization('Basic hello');
+is_deeply $demo->{head}, $head, 'Should have updated authorization header';
 
 ##############################################################################
 # Test grab.

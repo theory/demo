@@ -50,13 +50,13 @@ Path to a PEM-encoded certificate authority bundle.
 
 =item C<authorization>
 
-String to include in the Authorization header. Request echo includes
-C<-H $AUTH> if set.
+String to include in the Authorization header. Request command echoing
+includes C<-H $AUTH> if set.
 
 =item C<user>
 
 Username to include in the Authorization header. Ignored if C<authorization>
-is set. Request echo includes C<-H $AUTH> if set.
+is set. Request command echoing includes C<-H $AUTH> if set.
 
 =item C<input>
 
@@ -124,6 +124,21 @@ sub new {
 }
 
 =head2 Methods
+
+=head3 C<authorize>
+
+Set the string to include in the Authorization header. Echos setting the
+C<AUTH> environment variable unless a second argument is true. Once
+authorized, HTTP requests will echo C<-H $AUTH> as part of the command
+output.
+
+=cut
+
+sub authorize {
+    my ($self, $auth, $quiet) = @_;
+    $self->setenv(AUTH => "Authorization: $auth") unless $quiet;
+    $self->{head}->authorization($auth);
+}
 
 =head3 C<bold>
 
