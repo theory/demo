@@ -136,8 +136,8 @@ output.
 
 sub authorize {
     my ($self, $auth, $quiet) = @_;
-    $self->setenv(AUTH => "Authorization: $auth") unless $quiet;
     $self->{head}->authorization($auth);
+    $self->setenv(AUTH => "Authorization: $auth") unless $quiet;
 }
 
 =head3 C<bold>
@@ -319,28 +319,28 @@ sub start {
 
 =head3 C<clear>
 
-Types "clear" then clears the screen and emits a prompt. A op-opt when
-C<$self->{clear}> is false.
+Types "clear" then clears the screen and emits a prompt or dispatches
+L<C<nl_prompt>> when C<$self->{clear}> is false.
 
 =cut
 
 sub clear {
     my $self = shift;
-    return unless $self->{clear};
+    return $self->nl_prompt unless $self->{clear};
     $self->type('clear');
     $self->clear_now;
 }
 
-=head3 C<clear>
+=head3 C<clear_now>
 
-Clears the screen and emits a prompt. A op-opt when C<$self->{clear}> is
-false.
+Clears the screen and emits a prompt or dispatches to L<C<nl_prompt>> when
+C<$self->{clear}> is false.
 
 =cut
 
 sub clear_now {
     my $self = shift;
-    return unless $self->{clear};
+    return $self->nl_prompt unless $self->{clear};
     runx 'clear';
     $self->prompt;
 }
@@ -709,7 +709,7 @@ sub _curl {
     # Setup the request.
     my $curl = WWW::Curl::Easy->new;
     $curl->setopt(CURLOPT_NOPROGRESS, 1);
-    $curl->setopt(CURLOPT_USERAGENT, __PACKAGE__ . '/' . $self->VERSION);
+    $curl->setopt(CURLOPT_USERAGENT, __PACKAGE__ . '/' . __PACKAGE__->VERSION);
     $curl->setopt(CURLOPT_CUSTOMREQUEST, $method);
     $curl->setopt(CURLOPT_URL, $url);
 

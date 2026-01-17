@@ -299,7 +299,7 @@ reset_output;
 $ipc->setup;
 $demo->clear;
 is_deeply $ipc->args, {}, 'Should not have run clear';
-is $out, "", 'Should have no output';
+is $out, "\nbagel $gt ", 'Should have output a newline and prompt';
 
 # Test clear_now.
 $demo->{clear} = 1;
@@ -314,7 +314,7 @@ $ipc->setup;
 $demo->{clear} = 0;
 $demo->clear_now;
 is_deeply $ipc->args, {}, 'Should not have run clear';
-is $out, "", 'Should have no output';
+is $out, "\nbagel $gt ", 'Should have output a newline and prompt again';
 
 ##############################################################################
 # Test setenv and env.
