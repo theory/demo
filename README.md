@@ -1,4 +1,4 @@
-Theory/Demo version 0.33.0
+Theory/Demo version 0.40.0
 ==========================
 
 [![✅ Build Status](https://github.com/theory/demo/actions/workflows/test.yaml/badge.svg)](https://github.com/theory/demo/actions/workflows/test.yaml)
